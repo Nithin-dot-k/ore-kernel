@@ -251,17 +251,61 @@ pub async fn run_manifest_wizard(app_id: &String, client: &Client) {
             .items(priorities)
             .interact()
             .unwrap();
+        let mut json_history = Confirm::with_theme(&SimpleTheme)
+            .with_prompt("Enable JSON Chat History for agent (Required for Stateful Paging)?")
+            .default(false)
+            .interact()
+            .unwrap();
         let paging = Confirm::with_theme(&SimpleTheme)
             .with_prompt("Enable Stateful Paging (KV-Cache SSD Swap for long tasks)?")
             .default(false)
             .interact()
             .unwrap();
 
+        if json_history == false && paging == true {
+            println!(
+                "{} Stateful Paging requires JSON Chat History to be enabled. Enabling it now.",
+                "[WARN]".yellow()
+            );
+            json_history = true;
+        }
+
         toml_output.push_str("[resources]\n");
         toml_output.push_str(&format!("allowed_models = {}\n", selected_models_formatted));
         toml_output.push_str(&format!("max_tokens_per_minute = {}\n", tokens));
-        toml_output.push_str(&format!("gpu_priority = \"{}\"\n\n", priorities[p_idx]));
+        toml_output.push_str(&format!("gpu_priority = \"{}\"\n", priorities[p_idx]));
+        toml_output.push_str(&format!("json_history = {}\n", json_history));
         toml_output.push_str(&format!("stateful_paging = {}\n\n", paging));
+
+        if json_history == true {
+            println!("\n{} {}", ">>>".cyan(), "Configuring MEMORY LIMITS (Compaction)".bold());
+            
+            let max_tokens: u32 = Input::with_theme(&SimpleTheme)
+                .with_prompt("Max Conversation Context (Tokens, e.g., 8192)")
+                .default(8192)
+                .interact_text().unwrap();
+
+            let max_kv_mb: u32;  
+            if paging == true { 
+                max_kv_mb = Input::with_theme(&SimpleTheme)
+                    .with_prompt("Max Physical KV-Cache Size (MB, e.g., 1024 for 1GB)")
+                    .default(1024)
+                    .interact_text().unwrap();
+            } else {
+                max_kv_mb = 0;
+            }
+
+            let auto_sum = Confirm::with_theme(&SimpleTheme)
+                .with_prompt("Auto-summarize conversation when memory limits are hit? (Prevents amnesia)")
+                .default(true)
+                .interact().unwrap();
+
+            toml_output.push_str("[memory_limits]\n");
+            toml_output.push_str(&format!("max_json_tokens = {}\n", max_tokens));
+            toml_output.push_str(&format!("max_kv_cache_mb = {}\n", max_kv_mb));
+            toml_output.push_str(&format!("auto_summarize_on_cap = {}\n\n", auto_sum));
+        }
+
     }
 
     // --- 3. FILE SYSTEM ---
@@ -363,15 +407,21 @@ pub async fn run_manifest_wizard(app_id: &String, client: &Client) {
             .interact_text()
             .unwrap();
 
+        let persistence = Confirm::with_theme(&SimpleTheme)
+            .with_prompt("Enable Semantic Persistence (Flush Vector Pipes to NVMe SSD)?")
+            .default(true)
+            .interact().unwrap();
+
         toml_output.push_str("[ipc]\n");
         toml_output.push_str(&format!(
             "allowed_agent_targets = {}\n",
             format_list(agents)
         ));
         toml_output.push_str(&format!(
-            "allowed_semantic_pipes = {}\n\n",
+            "allowed_semantic_pipes = {}\n",
             format_list(pipes)
         ));
+        toml_output.push_str(&format!("semantic_persistence = {}\n\n", persistence));
     }
 
     // Write to disk

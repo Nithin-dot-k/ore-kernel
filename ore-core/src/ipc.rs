@@ -6,10 +6,11 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::vec;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 // Inter-process communication structures and utilities for ORE Agents
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AgentMessage {
     pub from_app: String,
     pub to_app: String,
@@ -68,7 +69,7 @@ impl MessageBus {
 
 // In-memory shared data pipes for semantic communication pipe
 // Tier 2: The lazy semantic bus (System-Level Vector DB)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryChunk {
     pub text: Arc<String>,
     pub vector: Arc<Vec<f32>>, // holds a PRE-NORMALIZED vector
@@ -106,7 +107,7 @@ impl PartialOrd for ScoredChunk {
 }
 
 pub struct SemanticBus {
-    memory_pipes: DashMap<String, VecDeque<Arc<MemoryChunk>>>,
+    memory_pipes: DashMap<String, (bool, VecDeque<Arc<MemoryChunk>>)>,
     embedding_cache: DashMap<u64, (Arc<Vec<f32>>, u64)>,
     cache_ttl_secs: u64,
     pipe_ttl_secs: u64,
@@ -161,6 +162,10 @@ impl SemanticBus {
         None
     }
 
+    pub fn get_pipe_contents(&self, pipe_name: &str) -> Option<VecDeque<Arc<MemoryChunk>>> {
+        self.memory_pipes.get(pipe_name).map(|pipe| pipe.1.clone())
+    }
+
     fn normalize(vec: &mut [f32]) {
         let sum_sq: f32 = vec.iter().map(|x| x * x).sum();
         let norm = sum_sq.sqrt().max(1e-9);
@@ -175,6 +180,7 @@ impl SemanticBus {
         text: String,
         mut vector: Vec<f32>,
         source_app: &str,
+        is_persistent: bool,
     ) {
         let hash = Self::hash_text(&text);
         let timestamp = SystemTime::now()
@@ -196,15 +202,20 @@ impl SemanticBus {
         self.embedding_cache
             .insert(hash, (Arc::clone(&arc_vector), timestamp));
 
-        let mut pipe = self.memory_pipes.entry(pipe_name.to_string()).or_default();
-        pipe.push_back(arc_chunk);
+        let mut pipe = self.memory_pipes.entry(pipe_name.to_string()).or_insert_with(|| (is_persistent, VecDeque::new()));
+        
+        if is_persistent {
+            pipe.0 = true; 
+        }
 
-        if pipe.len() > 10_000 {
-            pipe.pop_front();
+        pipe.1.push_back(arc_chunk);
+
+        if pipe.1.len() > 10_000 {
+            pipe.1.pop_front();
         }
     }
 
-    pub fn write_cached_chunk(&self, pipe_name: &str, text: String, arc_vector: Arc<Vec<f32>>, source_app: &str) {
+    pub fn write_cached_chunk(&self, pipe_name: &str, text: String, arc_vector: Arc<Vec<f32>>, source_app: &str, is_persistent: bool) {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let arc_text = Arc::new(text);
         
@@ -217,11 +228,16 @@ impl SemanticBus {
 
         // We skip `self.embedding_cache.insert` because it's already in the cache
 
-        let mut pipe = self.memory_pipes.entry(pipe_name.to_string()).or_default();
-        pipe.push_back(arc_chunk);
+        let mut pipe = self.memory_pipes.entry(pipe_name.to_string()).or_insert_with(|| (is_persistent, VecDeque::new()));
+        
+        if is_persistent {
+            pipe.0 = true; 
+        }
 
-        if pipe.len() > 10_000 {
-            pipe.pop_front();
+        pipe.1.push_back(arc_chunk);
+
+        if pipe.1.len() > 10_000 {
+            pipe.1.pop_front();
         }
     }
 
@@ -241,6 +257,14 @@ impl SemanticBus {
         top_k: usize,
         filter_app: Option<&str>,
     ) -> Vec<(f32, Arc<MemoryChunk>)> {
+
+        // 1. PAGE FAULT (Safe because handler already verified manifest permissions)
+        if !self.memory_pipes.contains_key(pipe_name) {
+            if let Some(restored_pipe) = crate::swap::Pager::page_in_semantic(pipe_name) {
+                self.memory_pipes.insert(pipe_name.to_string(), (true, restored_pipe));
+            }
+        }
+
         if let Some(pipe) = self.memory_pipes.get(pipe_name) {
             let current_time = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -249,7 +273,7 @@ impl SemanticBus {
 
             let mut heap = BinaryHeap::with_capacity(top_k);
 
-            for chunk in pipe.iter() {
+            for chunk in pipe.1.iter() {
                 if let Some(app_id) = filter_app
                     && chunk.source_app != app_id
                 {
@@ -364,25 +388,33 @@ impl SemanticBus {
             let mut chunks_swept = 0;
 
             for mut pipe_ref in self.memory_pipes.iter_mut() {
-                let pipe_contents = pipe_ref.value_mut();
-                let initial_chunks = pipe_contents.len();
+                let (is_persistent, pipe_contents) = pipe_ref.value_mut();
 
-                pipe_contents.retain(|chunk| {
-                    current_time.saturating_sub(chunk.timestamp) < self.pipe_ttl_secs
-                });
+                if *is_persistent {
+                    if !pipe_contents.is_empty() {
+                        pipe_contents.clear();
+                        pipes_cleaned += 1;
+                    }
+                } else {
+                    let initial_chunks = pipe_contents.len();
 
-                let removed = initial_chunks - pipe_contents.len();
-                if removed > 0 {
-                    chunks_swept += removed;
-                    pipes_cleaned += 1;
+                    pipe_contents.retain(|chunk| {
+                        current_time.saturating_sub(chunk.timestamp) < self.pipe_ttl_secs
+                    });
+
+                    let removed = initial_chunks - pipe_contents.len();
+                    if removed > 0 {
+                        chunks_swept += removed;
+                        pipes_cleaned += 1;
+                    }
                 }
             }
 
-            self.memory_pipes.retain(|_, chunks| !chunks.is_empty());
+            self.memory_pipes.retain(|_, (_, chunks)| !chunks.is_empty());
 
             if chunks_swept > 0 {
                 println!(
-                    "-> [KERNEL GC] Swept {} stale memory chunks across {} Semantic Pipes.",
+                    "-> [KERNEL GC] Evicted {} persistent pipes to SSD. Swept {} stale ephemeral chunks.",
                     chunks_swept, pipes_cleaned
                 );
             }

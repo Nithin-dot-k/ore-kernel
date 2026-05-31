@@ -4,22 +4,15 @@ pub mod models;
 
 use crate::driver::{DriverError, InferenceDriver, LocalModel, VramProcess};
 use crate::swap::ContextMessage;
-use anyhow::{Error as E, Result};
+use anyhow::{Result};
 use async_trait::async_trait;
-use candle_core::quantized::gguf_file;
 use candle_core::{DType, Device, Tensor};
-use candle_transformers::generation::LogitsProcessor;
 use engine::ActiveEngine;
-use gguf_tokenizer::TokenizerFromGguf;
 use std::fs;
-use std::fs::File;
-use std::io::Cursor;
-use memmap2::Mmap;
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use time::OffsetDateTime;
 use time::macros::format_description;
-use tokenizers::Tokenizer;
 use tokio::sync::mpsc::UnboundedSender;
 
 pub struct NativeDriver {
@@ -50,120 +43,7 @@ impl NativeDriver {
     }
 
     fn load_weights_into_memory(model_name: &str, device: &Device) -> Result<ActiveEngine> {
-        let safe_folder_name = model_name.replace(":", "-");
-        let model_dir = format!("../models/{}", safe_folder_name);
-        let gguf_path = format!("{}/model.gguf", model_dir);
-        let local_tokenizer_path = format!("{}/tokenizer.json", model_dir);
-
-        if !Path::new(&gguf_path).exists() {
-            return Err(E::msg(format!(
-                "Files not found. Run 'ore pull {}'",
-                model_name
-            )));
-        }
-        
-        println!("-> [CANDLE] Allocating Virtual Memory Pointer via mmap...");
-        let file = File::open(&gguf_path)?;
-        let mmap = unsafe { Mmap::map(&file)? };
-        let mut cursor = Cursor::new(&mmap[..]);
-
-        let model_content = gguf_file::Content::read(&mut cursor).map_err(E::msg)?;
-
-        let arch_name = match model_content.metadata.get("general.architecture") {
-            Some(gguf_file::Value::String(arch)) => arch.clone(),
-            _ => "unknown".to_string(),
-        };
-        println!("-> [CANDLE] Detected Architecture: '{}'", arch_name);
-
-        let global_tokenizer_name = if model_name.to_lowercase().contains("qwen2.5") {
-            "qwen2.5"
-        } else if model_name.to_lowercase().contains("llama4")
-            || model_name.to_lowercase().contains("llama-4")
-        {
-            "llama4"
-        } else if model_name.to_lowercase().contains("llama3.3")
-            || model_name.to_lowercase().contains("llama-3.3")
-        {
-            "llama3.3"
-        } else if model_name.to_lowercase().contains("llama3.2")
-            || model_name.to_lowercase().contains("llama3")
-            || model_name.to_lowercase().contains("llama-3.2")
-            || model_name.to_lowercase().contains("llama-3")
-        {
-            "llama3.2"
-        } else if model_name.to_lowercase().contains("llama2")
-            || model_name.to_lowercase().contains("llama-2")
-        {
-            "llama2"
-        } else if model_name.to_lowercase().contains("codellama") {
-            "codellama"
-        } else {
-            arch_name.as_str()
-        };
-
-        let global_path = format!("../tokenizers/{}.json", global_tokenizer_name);
-
-        // universal tokenizer fallback
-        let tokenizer = if Path::new(&local_tokenizer_path).exists() {
-            println!("-> [CANDLE] Using Local Dictionary...");
-            Tokenizer::from_file(&local_tokenizer_path).map_err(E::msg)?
-        } else if Path::new(&global_path).exists() {
-            println!(
-                "-> [CANDLE] Local dictionary not found. Using Universal OS Dictionary for '{}'...",
-                arch_name
-            );
-            Tokenizer::from_file(&global_path).map_err(E::msg)?
-        } else {
-            // THE RAW GGUF EXTRACTOR
-            println!(
-                "-> [CANDLE] [WARN] No JSON found. Extracting Tokenizer directly from GGUF metadata..."
-            );
-            let tok_file = File::open(&gguf_path)?;
-            let mut reader = std::io::BufReader::new(tok_file);
-            let content = gguf_file::Content::read(&mut reader).map_err(E::msg)?;
-
-            let extracted_tokenizer = Tokenizer::from_gguf(&content).map_err(E::msg)?;
-
-            // SAVE IT TO DISK
-            println!(
-                "-> [CANDLE] JIT Cache: Saving extracted dictionary to {}...",
-                local_tokenizer_path
-            );
-            if let Err(e) = extracted_tokenizer.save(&local_tokenizer_path, true) {
-                println!("-> [CANDLE] [WARN] Could not save cached tokenizer: {}", e);
-            } else {
-                println!("-> [CANDLE] [SUCCESS] Dictionary permanently cached.");
-            }
-
-            extracted_tokenizer
-        };
-
-        // architecture router
-        let (model, config) = match arch_name.as_str() {
-            "llama" => {
-                models::llama::load(model_name, model_content, &mut cursor, device, &tokenizer)?
-            }
-            "qwen2" => {
-                models::qwen::load(model_name, model_content, &mut cursor, device, &tokenizer)?
-            }
-            _ => {
-                return Err(E::msg(format!(
-                    "Architecture not supported yet: {}",
-                    arch_name
-                )));
-            }
-        };
-
-        let logits_processor = LogitsProcessor::new(299792458, Some(0.7), None);
-
-        Ok(ActiveEngine {
-            model,
-            tokenizer,
-            logits_processor,
-            model_name: model_name.to_string(),
-            config,
-            _mmap: mmap,
-        })
+        ActiveEngine::load(model_name, device)
     }
 }
 

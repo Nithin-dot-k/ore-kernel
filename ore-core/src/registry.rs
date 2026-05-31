@@ -57,14 +57,22 @@ fn default_false() -> bool { false }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MemoryLimits {
-    pub max_chat_history_messages: usize,
+    /// The maximum conversational context before the AI gets confused (e.g., 8192 tokens)
+    /// We use a rough heuristic: 1 token ~= 4 characters of JSON text.
+    pub max_json_tokens: u32,
+    
+    /// The physical SSD/VRAM size limit for the frozen brain state (e.g., 1024 MB = 1 GB)
+    pub max_kv_cache_mb: u32,
+    
+    /// If either of the above limits are hit, should ORE summarize the history?
     pub auto_summarize_on_cap: bool,
 }
 
 impl Default for MemoryLimits {
     fn default() -> Self {
         Self {
-            max_chat_history_messages: 20, 
+            max_json_tokens: 8192, 
+            max_kv_cache_mb: 1024,
             auto_summarize_on_cap: true,   
         }
     }
@@ -98,6 +106,9 @@ pub struct Ipc {
 
     #[serde(default)]
     pub allowed_semantic_pipes: Vec<String>,
+
+    #[serde(default = "default_false")]
+    pub semantic_persistence: bool,
 }
 
 // the app registry (In-Memory Cache)
@@ -170,9 +181,12 @@ impl AppManifest {
             return Err("FATAL: 'max_tokens_per_minute' cannot be 0. Agent would be permanently frozen.".to_string());
         }
 
-        // RULE 3: Compaction Limit Sanity Check
-        if self.memory_limits.max_chat_history_messages < 2 {
-            return Err("FATAL: 'max_chat_history_messages' must be at least 2 to maintain conversation context.".to_string());
+        if self.resources.json_history && self.memory_limits.max_json_tokens < 500 {
+            return Err("FATAL: 'max_context_tokens' must be at least 500. Otherwise the AI won't have enough memory to even generate a summary!".to_string());
+        }
+
+        if self.resources.stateful_paging && self.memory_limits.max_kv_cache_mb == 0 {
+            return Err("FATAL: 'max_kv_cache_mb' cannot be 0. Give the agent at least some physical VRAM space.".to_string());
         }
 
         Ok(())

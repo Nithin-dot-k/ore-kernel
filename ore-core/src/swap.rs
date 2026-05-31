@@ -1,4 +1,7 @@
+use crate::ipc::MemoryChunk;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::sync::Arc;
 use std::fs;
 use std::path::Path;
 
@@ -46,12 +49,49 @@ impl Pager {
         Vec::new()
     }
 
+    pub fn page_out_semantic(pipe_name: &str, chunks: &VecDeque<Arc<MemoryChunk>>) {
+        Self::ensure_swap_drive();
+        let path = format!("{}/{}.pipe", Self::SWAP_DIR, pipe_name);
+
+        // Bincode freezes the RAM structure into pure 1s and 0s instantly
+        if let Ok(data) = bincode::serialize(chunks) {
+            let _ = fs::write(&path, data);
+            println!("-> [PAGER] Semantic Pipe '{}' flushed to SSD (.pipe).", pipe_name);
+        }
+    }
+
+    pub fn page_in_semantic(pipe_name: &str) -> Option<VecDeque<Arc<MemoryChunk>>> {
+        let path = format!("{}/{}.pipe", Self::SWAP_DIR, pipe_name);
+
+        if Path::new(&path).exists() {
+            // Read raw bytes instead of strings
+            if let Ok(data) = fs::read(&path) {
+                if let Ok(chunks) = bincode::deserialize::<VecDeque<Arc<MemoryChunk>>>(&data) {
+                    println!("-> [PAGER] Semantic Pipe '{}' mapped IN from SSD.", pipe_name);
+                    return Some(chunks);
+                } else {
+                    println!("-> [PAGER] [ERROR] Failed to deserialize pipe '{}'. The binary file might be corrupt or from an older version.", pipe_name);
+                }
+            }
+        }
+        None
+    }
+
     /// Wipe the memory clean
     pub fn clear_page(app_id: &str) {
-        let path_json = format!("{}/{}.json", Self::SWAP_DIR, app_id);
-        let path_bin = format!("{}/{}.bin", Self::SWAP_DIR, app_id);
+        let _ = fs::remove_file(format!("{}/{}.json", Self::SWAP_DIR, app_id));
+        let _ = fs::remove_file(format!("{}/{}.pipe", Self::SWAP_DIR, app_id));
 
-        let _ = fs::remove_file(path_json);
-        let _ = fs::remove_file(path_bin);
+        // Sweep for any Model-Specific Safetensor KV-Caches
+        if let Ok(entries) = fs::read_dir(Self::SWAP_DIR) {
+            for entry in entries.flatten() {
+                let file_name = entry.file_name().to_string_lossy().to_string();
+                if file_name.starts_with(&format!("{}_", app_id)) && file_name.ends_with(".safetensors") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+        
+        println!("-> [PAGER] Completely wiped all swap files for Agent '{}'", app_id);
     }
 }

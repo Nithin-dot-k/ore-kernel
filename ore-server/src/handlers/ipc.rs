@@ -7,6 +7,7 @@ use axum::{
     response::{IntoResponse, Json as JsonResponse},
 };
 use ore_core::ipc::{AgentMessage, SemanticBus};
+use ore_core::swap::Pager;
 use std::sync::Arc;
 
 pub async fn sys_share_context(
@@ -115,6 +116,7 @@ pub async fn sys_share_context(
                         chunk,
                         vector,
                         &manifest.app_id,
+                        manifest.ipc.semantic_persistence,
                     );
                 }
             }
@@ -128,6 +130,7 @@ pub async fn sys_share_context(
             chunk,
             arc_vector,
             &manifest.app_id,
+            manifest.ipc.semantic_persistence,
         );
     }
 
@@ -137,6 +140,20 @@ pub async fn sys_share_context(
         println!("-> [SEMANTIC BUS] Knowledge embedded. CPU memory flushed (0MB Idle).");
     } else {
         println!("-> [SEMANTIC BUS] Knowledge embedded entirely from Cache. Zero compute used.");
+    }
+
+    if manifest.ipc.semantic_persistence {
+        let p_name = payload.target_pipe.clone();
+        
+        // Grab the updated pipe from RAM
+        if let Some(pipe_contents) = state.semantic_bus.get_pipe_contents(&p_name) {
+            // Spawn a background thread to freeze it to the SSD without blocking the API!
+            tokio::spawn(async move {
+                Pager::page_out_semantic(&p_name, &pipe_contents);
+            });
+        }
+    } else {
+        println!("-> [SEMANTIC BUS] Ephemeral Mode: Data secured in RAM only. (semantic_persistence = false)");
     }
 
     "SUCCESS: Knowledge processed and stored in Semantic Bus.".to_string()
