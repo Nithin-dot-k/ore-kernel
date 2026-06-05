@@ -20,11 +20,11 @@ pub async fn ask_ai(State(state): State<Arc<KernelState>>, Path(prompt): Path<St
 
     let app_id = "openclaw"; // In the future, this comes from an API Key/Token
     let manifest = match state.registry.get_app(app_id) {
-        Some(m) => m,
+        Some(m) => m.clone(),
         None => return format!("ORE KERNEL ALERT: Unregistered Agent '{}'.", app_id),
     };
 
-    let secured_prompt = match ContextFirewall::secure_request(manifest, &clean_prompt) {
+    let secured_prompt = match ContextFirewall::secure_request(&manifest, &clean_prompt) {
         Ok(safe_text) => {
             println!("-> Security Check Passed.");
             if safe_text != clean_prompt {
@@ -68,9 +68,10 @@ pub async fn ask_ai(State(state): State<Arc<KernelState>>, Path(prompt): Path<St
     let context_clone = current_context.clone();
 
     tokio::spawn(async move {
-        let _ = driver
-            .generate_text(&model_name, &prompt_clone, context_clone, tx)
-            .await;
+        // production update required: app_id -> &manifest.app_id on function signature
+        if let Err(e) = driver.generate_text(&model_name, app_id, manifest.resources.stateful_paging, &prompt_clone, context_clone, tx).await {
+            println!("-> [KERNEL ERROR] Inference execution failed: {}", e);
+        }
 
         println!("-> Agent Execution complete. Releasing GPU Lock.");
         drop(lease);
@@ -108,7 +109,7 @@ pub async fn run_process(
 
     let app_id = "terminal_user";
     let manifest = match state.registry.get_app(app_id) {
-        Some(m) => m,
+        Some(m) => m.clone(),
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
@@ -129,7 +130,7 @@ pub async fn run_process(
             .into_response();
     }
 
-    let secured_prompt = match ContextFirewall::secure_request(manifest, &payload.prompt) {
+    let secured_prompt = match ContextFirewall::secure_request(&manifest, &payload.prompt) {
         Ok(safe_text) => {
             println!("-> Security Check Passed.");
             safe_text
@@ -156,8 +157,9 @@ pub async fn run_process(
     let prompt = secured_prompt.clone();
 
     tokio::spawn(async move {
-        let _ = driver.generate_text(&model_name, &prompt, None, tx).await;
-
+        if let Err(e) = driver.generate_text(&model_name, app_id, manifest.resources.stateful_paging, &prompt, None, tx).await {
+            println!("-> [KERNEL ERROR] Inference execution failed: {}", e);
+        }
         println!("-> Execution complete. Releasing GPU Lock.");
 
         drop(lease);

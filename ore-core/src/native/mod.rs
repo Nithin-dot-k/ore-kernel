@@ -1,6 +1,7 @@
 pub mod engine;
 pub mod gguf_tokenizer;
 pub mod models;
+pub mod kv_manager;
 
 use crate::driver::{DriverError, InferenceDriver, LocalModel, VramProcess};
 use crate::swap::ContextMessage;
@@ -91,6 +92,8 @@ impl InferenceDriver for NativeDriver {
     async fn generate_text(
         &self,
         model: &str,
+        app_id: &str,
+        stateful_paging: bool,
         prompt: &str,
         _history: Option<Vec<ContextMessage>>,
         tx: UnboundedSender<String>,
@@ -110,9 +113,28 @@ impl InferenceDriver for NativeDriver {
         let safe_prompt = prompt.to_string();
         let device_clone = self.device.clone();
 
+        let a_id = app_id.to_string();
+
         let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
             let mut state_guard = engine_arc.lock().unwrap();
             let active = state_guard.as_mut().unwrap();
+
+            let mut current_cache_len = 0;
+            if stateful_paging {
+                if let Some(frozen_tensors) = crate::swap::Pager::page_in_kv_cache(&a_id, &model, &device_clone) {
+                    // Unflatten the SSD file back into 3D Neural Tensors
+                    let cache = crate::native::kv_manager::KvManager::unflatten_cache(&frozen_tensors, active.model.num_layers());
+                    
+                    // Inject directly into the Engine's brain!
+                    active.model.set_kv_cache(cache);
+                    current_cache_len = active.model.get_kv_cache_len(); 
+                    
+                    println!("-> [NATIVE DRIVER] KV-Cache injected ({} tokens). Bypassing Prefill.", current_cache_len);
+                }
+            } else {
+                // If paging is off, ensure we start with a clean brain!
+                active.model.clear_kv_cache();
+            }
 
             let formatted_prompt = (active.config.formatter)(&safe_prompt);
             let mut tokens = active
@@ -122,18 +144,18 @@ impl InferenceDriver for NativeDriver {
                 .get_ids()
                 .to_vec();
 
+            let mut start_pos = current_cache_len;
+
             for index in 0..8192 {
                 let context_size = if index > 0 { 1 } else { tokens.len() };
-                let start_pos = tokens.len().saturating_sub(context_size);
 
-                let input_tensor = Tensor::new(&tokens[start_pos..], &device_clone)
+                let input_tensor = Tensor::new(&tokens[tokens.len() - context_size..], &device_clone)
                     .unwrap()
                     .unsqueeze(0)
                     .unwrap();
                 let logits = active.model.forward(&input_tensor, start_pos).unwrap();
+                
                 let logits = logits
-                    .squeeze(0)
-                    .unwrap()
                     .squeeze(0)
                     .unwrap()
                     .to_dtype(DType::F32)
@@ -152,7 +174,25 @@ impl InferenceDriver for NativeDriver {
                 }
 
                 tokens.push(next_token_id);
+                start_pos += context_size;
             }
+
+            if stateful_paging {
+                println!("-> [NATIVE DRIVER] Freezing Brain State to SSD...");
+                
+                // Extract the raw electricity from the Engine
+                let raw_cache = active.model.get_kv_cache();
+                let flat_tensors = crate::native::kv_manager::KvManager::flatten_cache(&raw_cache);
+                
+                let out_id = a_id.clone();
+                let out_model = model.clone();
+                
+                // Blast it to the NVMe drive in the background!
+                tokio::spawn(async move {
+                    crate::swap::Pager::page_out_kv_cache(&out_id, &out_model, &flat_tensors);
+                });
+            }
+            
             Ok(())
         })
         .await

@@ -69,15 +69,41 @@ Restores frozen context from disk. Called **before** inference to reconstruct th
 
 ```rust
 pub fn clear_page(app_id: &str) {
-    let path_json = format!("{}/{}.json", Self::SWAP_DIR, app_id);
-    let path_bin = format!("{}/{}.bin", Self::SWAP_DIR, app_id);
+    let _ = fs::remove_file(format!("{}/{}.json", Self::SWAP_DIR, app_id));
+    let _ = fs::remove_file(format!("{}/{}.pipe", Self::SWAP_DIR, app_id));
 
-    let _ = fs::remove_file(path_json);
-    let _ = fs::remove_file(path_bin);
+    // Sweep for any Model-Specific Safetensor KV-Caches
+    if let Ok(entries) = fs::read_dir(Self::SWAP_DIR) {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            if file_name.starts_with(&format!("{}_", app_id)) && file_name.ends_with(".safetensors") {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
 }
 ```
 
-Wipes an agent's frozen memory. Called via `ore clear <app_id>` or `GET /clear/:app_id`. Removes both `.json` and `.bin` files (the `.bin` format is reserved for future binary swap formats).
+Wipes an agent's frozen memory. Called via `ore clear <app_id>` or `GET /clear/:app_id`. Removes `.json` fallback files, `.pipe` semantic memory files, and cleans up any model-specific `.safetensors` KV-Caches.
+
+### Semantic Persistence (Page Out / Page In)
+
+The pager now supports freezing entire `SemanticBus` vector pipelines directly to disk using Bincode serialization.
+
+```rust
+pub fn page_out_semantic(pipe_name: &str, chunks: &VecDeque<Arc<MemoryChunk>>) {
+    // ...
+    if let Ok(data) = bincode::serialize(chunks) {
+        let _ = fs::write(&path, data);
+    }
+}
+
+pub fn page_in_semantic(pipe_name: &str) -> Option<VecDeque<Arc<MemoryChunk>>> {
+    // Reads Bincode binary and restores the VecDeque to RAM
+}
+```
+
+When an agent's manifest has `semantic_persistence = true`, the kernel spawns a background thread to automatically serialize the pipe to a `.pipe` file upon any knowledge ingestion.
 
 ---
 
@@ -110,19 +136,21 @@ Agents must explicitly enable SSD paging in their manifest:
 
 ```toml
 [resources]
+json_history = true
 stateful_paging = true
 ```
 
-When `stateful_paging = false` (default), the handler skips the page-in/page-out calls - the agent starts every request with a clean context.
+When `stateful_paging = false` (default), the handler skips the page-in/page-out calls - the agent starts every request with a clean context. Note that `stateful_paging` requires `json_history = true` to prevent KV-cache corruption during memory compaction.
 
 ---
 
 ## Design Decisions
 
-- **JSON, not binary** - Swap files are human-readable on purpose. This makes debugging agent memory trivial (`cat swap/openclaw.json`) and keeps the format cross-platform.
-- **Synchronous I/O** - The pager uses `std::fs` (sync) rather than `tokio::fs` (async). Swap files are small (kilobytes), and adding async here would complicate the code path for negligible latency savings.
+- **JSON, not binary (for chat history)** - Swap files are human-readable on purpose. This makes debugging agent memory trivial (`cat swap/openclaw.json`) and keeps the format cross-platform.
+- **Bincode for Semantic Pipes** - Semantic memory vectors are written as `.pipe` files using Bincode, as Bincode freezes the RAM structure into pure 1s and 0s instantly, allowing high-performance mapping.
+- **Synchronous I/O** - The pager uses `std::fs` (sync) rather than `tokio::fs` (async) for history. Swap files are small (kilobytes), and adding async here would complicate the code path for negligible latency savings. (Semantic persistence runs in a background thread).
 - **Eager writes** - History is paged out after every response, not batched. This means agent context survives even if the kernel crashes unexpectedly.
-- **No size limits (yet)** - Swap files grow unbounded. Future versions will add a configurable max history depth to prevent disk bloat from long-lived agents.
+- **Memory Limits Compaction** - Swap files are kept in check by the `memory_limits` configuration in the `AppManifest` (`max_json_tokens` and `max_kv_cache_mb`), which trigger automatic summarization when boundaries are hit.
 
 ---
 

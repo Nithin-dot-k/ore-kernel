@@ -50,6 +50,8 @@ pub trait InferenceDriver: Send + Sync {
     async fn generate_text(
         &self,
         model: &str,
+        app_id: &str,
+        stateful_paging: bool,
         prompt: &str,
         history: Option<Vec<ContextMessage>>,
         tx: UnboundedSender<String>,

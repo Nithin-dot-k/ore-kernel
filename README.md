@@ -487,7 +487,13 @@ enforce_pii_redaction = true
 allowed_models = ["llama3.2:1b"]
 max_tokens_per_minute = 10000
 gpu_priority = "normal"
+json_history = true                # Enable JSON text fallback
 stateful_paging = true             # Enable SSD context swap for long conversations
+
+[memory_limits]
+max_json_tokens = 8192             # Max conversational context tokens before summarization
+max_kv_cache_mb = 1024             # SSD/VRAM size limit for frozen state
+auto_summarize_on_cap = true       # Summarize history when limits hit
 
 [file_system]
 allowed_read_paths = ["/home/user/projects"]
@@ -507,6 +513,7 @@ allowed_tools = ["file_search", "git_commit"]
 [ipc]
 allowed_agent_targets = ["writer_agent"]     # Tier 1: Agent-to-Agent messaging
 allowed_semantic_pipes = ["rust_docs"]       # Tier 2: Semantic memory access
+semantic_persistence = true                  # Freeze semantic pipes to SSD
 ```
 
 ### Manifest Permission Scopes

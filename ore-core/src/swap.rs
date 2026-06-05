@@ -1,6 +1,7 @@
 use crate::ipc::MemoryChunk;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use candle_core::{Device, Tensor};
+use std::collections::{VecDeque, HashMap};
 use std::sync::Arc;
 use std::fs;
 use std::path::Path;
@@ -71,6 +72,37 @@ impl Pager {
                     return Some(chunks);
                 } else {
                     println!("-> [PAGER] [ERROR] Failed to deserialize pipe '{}'. The binary file might be corrupt or from an older version.", pipe_name);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn page_out_kv_cache(app_id: &str, model_name: &str, tensors: &HashMap<String, Tensor>) {
+        Self::ensure_swap_drive();
+        let safe_model = model_name.replace(":", "-");
+        let path = format!("{}/{}_{}.safetensors", Self::SWAP_DIR, app_id, safe_model);
+        
+        // Save the raw math matrices directly to the SSD
+        if let Err(e) = candle_core::safetensors::save(tensors, &path) {
+            println!("-> [PAGER] [ERROR] Failed to save KV-Cache to SSD: {}", e);
+        } else {
+            println!("-> [PAGER] Agent '{}' KV-Cache ({} Tensors) paged OUT to SSD.", app_id, tensors.len());
+        }
+    }
+
+    pub fn page_in_kv_cache(app_id: &str, model_name: &str, device: &Device) -> Option<HashMap<String, Tensor>> {
+        let safe_model = model_name.replace(":", "-");
+        let path = format!("{}/{}_{}.safetensors", Self::SWAP_DIR, app_id, safe_model);
+
+        if Path::new(&path).exists() {
+            match candle_core::safetensors::load(&path, device) {
+                Ok(tensors) => {
+                    println!("-> [PAGER] Agent '{}' KV-Cache paged IN from SSD.", app_id);
+                    return Some(tensors);
+                }
+                Err(e) => {
+                    println!("-> [PAGER] [WARN] Failed to load KV-Cache: {}. Falling back to JSON History.", e);
                 }
             }
         }

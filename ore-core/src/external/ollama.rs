@@ -116,6 +116,8 @@ impl InferenceDriver for OllamaDriver {
     async fn generate_text(
         &self,
         model: &str,
+        _app_id: &str,
+        _stateful_paging: bool,
         prompt: &str,
         history: Option<Vec<ContextMessage>>,
         tx: UnboundedSender<String>,

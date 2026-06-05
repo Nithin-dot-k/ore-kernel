@@ -48,6 +48,7 @@ Applications never talk to the GPU directly. They talk to ORE. ORE enforces the 
 ║   │  · Embedding Cache (Hash-based dedup +       │   ║
 ║   │           Zero-copy pointers)                │   ║
 ║   │  · Memory GC  (Hourly TTL-based sweep)       │   ║
+║   │  · Semantic Persistence (SSD Bincode Pipes)  │   ║
 ║   └──────────────────────────────────────────────┘   ║
 ╚══════════════════════════╤═══════════════════════════╝
                            │
@@ -202,7 +203,7 @@ ore-system/
 
 2. **Zero-Copy Architecture** - The Native Engine achieves sub-50ms instant boot times by utilizing `memmap2` to stream weights directly from the SSD to the GPU, bypassing system RAM bottlenecks. Additionally, the GPU scheduler detects when the requested model is already loaded (hot-swap) and shares the instance instead of reloading. RAII-based `GpuLease` ensures the semaphore is always released, even on panics.
 
-3. **OS-Style Memory Management** - Idle agent context is paged to SSD (`swap/` directory) and restored on demand, just like an OS page file. The `SemanticBus` runs hourly garbage collection to evict stale embeddings and pipe data.
+3. **OS-Style Memory Management & Resource Limits** - Idle agent context is paged to SSD (`swap/` directory) and restored on demand. The kernel strictly enforces `memory_limits` to prevent OOM crashes (setting explicit caps on KV-cache VRAM and JSON context tokens). The `SemanticBus` can transparently freeze vector pipelines to SSD (`.pipe` files) and runs hourly garbage collection to evict stale embeddings.
 
 4. **Driver Abstraction** - The `InferenceDriver` trait decouples all kernel logic from the physical inference engine. Swap between Native Candle and Ollama with a single config change. Add new backends by implementing 9 trait methods.
 

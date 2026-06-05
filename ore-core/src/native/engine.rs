@@ -8,21 +8,96 @@ use memmap2::Mmap;
 use candle_core::{Tensor, Device};
 use candle_core::quantized::gguf_file;
 use candle_transformers::generation::LogitsProcessor;
-use candle_transformers::models::quantized_llama::ModelWeights as LlamaModel;
-use candle_transformers::models::quantized_qwen2::ModelWeights as QwenModel;
+use crate::native::models::llama::ModelWeights as LlamaModel;
+use crate::native::models::qwen2::ModelWeights as Qwen2Model;
 use tokenizers::Tokenizer;
 
 // Supports multiple architectures
 pub enum OreEngine {
-    Qwen(QwenModel),
+    Qwen2(Qwen2Model),
     Llama(LlamaModel),
 }
 
 impl OreEngine {
     pub fn forward(&mut self, input: &Tensor, start_pos: usize) -> Result<Tensor> {
         match self {
-            OreEngine::Qwen(m) => m.forward(input, start_pos).map_err(E::msg),
+            OreEngine::Qwen2(m) => m.forward(input, start_pos).map_err(E::msg),
             OreEngine::Llama(m) => m.forward(input, start_pos).map_err(E::msg),
+        }
+
+        // --- TO BE EVALUATED FOR NORMALIZATION ---
+        // let logits = match self {
+        //     OreEngine::Qwen2(m) => m.forward(input, start_pos).map_err(E::msg),
+        //     OreEngine::Llama(m) => m.forward(input, start_pos).map_err(E::msg),
+        // }
+        // let dims = logits.dims().len();
+        // let normalized_logits = if dims == 3 {
+        //     logits.squeeze(0)?.squeeze(0)? // If Qwen (3D), squeeze twice
+        // } else if dims == 2 {
+        //     logits.squeeze(0)?             // If Llama (2D), squeeze once
+        // } else {
+        //     logits
+        // };
+        // Ok(normalized_logits)
+    }
+
+    pub fn num_layers(&self) -> usize {
+        match self {
+            OreEngine::Llama(m) => m.layers.len(),
+            OreEngine::Qwen2(m) => m.layers.len(),
+        }
+    }
+
+    pub fn clear_kv_cache(&mut self) {
+        match self {
+            OreEngine::Llama(m) => {
+                for layer in m.layers.iter_mut() {
+                    layer.kv_cache = None;
+                }
+            }
+            OreEngine::Qwen2(m) => {
+                for layer in m.layers.iter_mut() {
+                    layer.kv_cache = None;
+                }
+            }
+        }
+    }
+
+    pub fn get_kv_cache_len(&self) -> usize {
+        // Look at Layer 0's Key tensor. The 3rd dimension is usually the sequence length.
+        let first_layer_cache = match self {
+            OreEngine::Llama(m) => m.layers[0].kv_cache.as_ref(),
+            OreEngine::Qwen2(m) => m.layers[0].kv_cache.as_ref(),
+        };
+
+        if let Some((k, _v)) = first_layer_cache {
+            k.dim(2).unwrap_or(0) 
+        } else {
+            0
+        }
+    }
+
+    /// Rips the physical brain state out of the GPU
+    pub fn get_kv_cache(&self) -> Vec<Option<(Tensor, Tensor)>> {
+        match self {
+            OreEngine::Llama(m) => m.layers.iter().map(|l| l.kv_cache.clone()).collect(),
+            OreEngine::Qwen2(m) => m.layers.iter().map(|l| l.kv_cache.clone()).collect(),
+        }
+    }
+
+    /// Injects a frozen brain state back into the AI
+    pub fn set_kv_cache(&mut self, cache: Vec<Option<(Tensor, Tensor)>>) {
+        match self {
+            OreEngine::Llama(m) => {
+                for (layer, saved_cache) in m.layers.iter_mut().zip(cache.into_iter()) {
+                    layer.kv_cache = saved_cache;
+                }
+            }
+            OreEngine::Qwen2(m) => {
+                for (layer, saved_cache) in m.layers.iter_mut().zip(cache.into_iter()) {
+                    layer.kv_cache = saved_cache;
+                }
+            }
         }
     }
 }
@@ -141,7 +216,7 @@ impl ActiveEngine {
         // 4. Load Neural Weights (Architecture Router)
         let (model, config) = match arch_name.as_str() {
             "llama" => models::llama::load(model_name, model_content, &mut cursor, device, &tokenizer)?,
-            "qwen2" => models::qwen::load(model_name, model_content, &mut cursor, device, &tokenizer)?,
+            "qwen2" => models::qwen2::load(model_name, model_content, &mut cursor, device, &tokenizer)?,
             _ => return Err(E::msg(format!("Architecture not supported natively: {}", arch_name))),
         };
 
