@@ -65,6 +65,22 @@ pub fn page_in_history(app_id: &str) -> Vec<ContextMessage> {
 
 Restores frozen context from disk. Called **before** inference to reconstruct the conversation. Returns an empty `Vec` if no swap file exists.
 
+### KV-Cache Paging (RAM ↔ SSD)
+
+The Pager also handles the physical AI memory state—the Attention Key-Value (KV) Cache tensors.
+
+```rust
+pub fn page_out_kv_cache(app_id: &str, model_name: &str, tensors: &HashMap<String, Tensor>) {
+    // Saves raw math matrices to swap/<app_id>_<model_name>.safetensors
+}
+
+pub fn page_in_kv_cache(app_id: &str, model_name: &str, device: &Device) -> Option<HashMap<String, Tensor>> {
+    // Loads the tensors back directly into the GPU/CPU memory
+}
+```
+
+This prevents the LLM from having to re-process thousands of tokens to rebuild its internal state when an agent is brought back from disk.
+
 ### Clear Page
 
 ```rust
@@ -107,9 +123,12 @@ When an agent's manifest has `semantic_persistence = true`, the kernel spawns a 
 
 ---
 
-## Swap File Format
+## Swap File Formats
 
-Each agent's swap file is stored at `swap/<app_id>.json`:
+The pager generates three types of files in the `swap/` directory:
+
+### 1. JSON History (`<app_id>.json`)
+Stores the raw conversation thread. Human-readable and cross-platform:
 
 ```json
 [
@@ -127,6 +146,12 @@ Each agent's swap file is stored at `swap/<app_id>.json`:
   }
 ]
 ```
+
+### 2. Semantic Pipes (`<pipe_name>.pipe`)
+Binary bincode representations of an agent's `SemanticBus` vectors.
+
+### 3. Safetensors KV-Cache (`<app_id>_<model>.safetensors`)
+Physical snapshot of the AI model's internal memory state (`HashMap<String, Tensor>`). Used to skip prompt re-processing upon wake-up.
 
 ---
 

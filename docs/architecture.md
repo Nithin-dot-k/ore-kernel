@@ -37,8 +37,8 @@ Applications never talk to the GPU directly. They talk to ORE. ORE enforces the 
 ║                                                      ║
 ║   ┌──────────────────────────────────────────────┐   ║
 ║   │  SSD Pager  (Agent Context Swap)             │   ║
-║   │  · Page Out (RAM → SSD JSON Freeze)          │   ║
-║   │  · Page In  (SSD → RAM Restore)              │   ║
+║   │  · Page Out/In (RAM ↔ SSD JSON Freeze)       │   ║
+║   │  · Page Out/In (KV-Cache .safetensors)       │   ║
 ║   └──────────────────────────────────────────────┘   ║
 ║                                                      ║
 ║   ┌──────────────────────────────────────────────┐   ║
@@ -107,6 +107,7 @@ Client (curl / CLI / App)
 ┌─────────────────────────────────────┐
 │ 4. SSD PAGER (if stateful)          │  ore-core/src/swap.rs
 │    Pager::page_in_history()         │
+│    Pager::page_in_kv_cache()        │
 │    Append new message to context    │
 └──────────────┬──────────────────────┘
                ▼
@@ -126,7 +127,8 @@ Client (curl / CLI / App)
 ┌─────────────────────────────────────┐
 │ 7. RESPONSE + CLEANUP              │
 │    Stream tokens to client          │
-│    Pager::page_out_history()        │
+│    Check memory limits & Summarize  │
+│    Pager::page_out_history/kv_cache │
 │    GpuLease drops → semaphore freed │
 └─────────────────────────────────────┘
 ```
