@@ -14,6 +14,7 @@
 //!
 
 use crate::native::engine::{ModelConfig, OreEngine};
+use crate::swap::ContextMessage;
 use candle_transformers::{quantized_nn::RmsNorm, utils::repeat_kv};
 use candle_nn::{Embedding, Module};
 use candle_core::{
@@ -44,15 +45,32 @@ pub fn load<R: Read + Seek>(
 
     let name_lower = model_name.to_lowercase();
 
-    let formatter: fn(&str) -> String = if name_lower.contains("-base") {
+    let formatter: fn(&[ContextMessage], &str, bool) -> String = if name_lower.contains("-base") {
         // base model formatter (no special tokens, just pass through)
-        |prompt| prompt.to_string()
+        |history, prompt, _is_cold_start| {
+            let mut out = String::new();
+            for msg in history { out.push_str(&format!("{}: {}\n", msg.role, msg.content)); }
+            out.push_str(&format!("user: {}\n", prompt));
+            out
+        }
     } else {
-        |prompt| {
-            format!(
-                "<|im_start|>system\nYou are a helpful AI assistant.<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
-                prompt
-            )
+        |history, prompt, is_cold_start| {
+            let mut out = String::new();
+
+            if is_cold_start {
+                let mut has_system = false;
+                for msg in history {
+                    if msg.role == "system" { has_system = true; }
+                    out.push_str(&format!("<|im_start|>{}\n{}<|im_end|>\n", msg.role, msg.content));    
+                }
+                if !has_system {
+                    out.insert_str(0, "<|im_start|>system\nYou are a helpful AI assistant.<|im_end|>\n");
+                }
+            }
+
+            out.push_str(&format!("<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", prompt));
+            
+            out
         }
     };
 

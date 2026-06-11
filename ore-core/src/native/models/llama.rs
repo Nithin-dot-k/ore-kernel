@@ -18,6 +18,7 @@
 
 use crate::native::engine::{ModelConfig, OreEngine};
 use crate::native::models::llama::ModelWeights as LlamaModel;
+use crate::swap::ContextMessage;
 use std::collections::HashMap;
 use candle_transformers::quantized_nn::RmsNorm;
 use candle_core::quantized::QTensor;
@@ -50,24 +51,65 @@ pub fn load<R: Read + Seek>(
     let name_lower = model_name.to_lowercase();
     let is_llama_2 = name_lower.contains("llama2") || name_lower.contains("llama-2");
 
-    let formatter: fn(&str) -> String = if name_lower.contains("-base") {
+    let formatter: fn(&[ContextMessage], &str, bool) -> String = if name_lower.contains("-base") {
         // base model formatter (no special tokens, just pass through)
-        |prompt| prompt.to_string()
+        |history, prompt, _is_cold_start| {
+            let mut out = String::new();
+            for msg in history { out.push_str(&format!("{}: {}\n", msg.role, msg.content)); }
+            out.push_str(&format!("user: {}\n", prompt));
+            out
+        }
     } else if is_llama_2 {
         // llama 2 formatter
-        |prompt| {
-            format!(
-                "<s>[INST] <<SYS>>\nYou are a helpful AI.\n<</SYS>>\n\n{} [/INST]",
-                prompt
-            )
+        |history, prompt, is_cold_start| {
+            let mut out = String::new();
+            
+            if is_cold_start {
+                out.push_str("<s>[INST] <<SYS>>\nYou are a helpful AI.\n<</SYS>>\n\n");
+                
+                let mut is_first_user = true;
+                for msg in history {
+                    if msg.role == "user" {
+                        if is_first_user {
+                            out.push_str(&format!("{} [/INST] ", msg.content));
+                            is_first_user = false;
+                        } else {
+                            out.push_str(&format!("<s>[INST] {} [/INST] ", msg.content));
+                        }
+                    } else if msg.role == "assistant" {
+                        out.push_str(&format!("{} </s>", msg.content));
+                    }
+                }
+                
+                if !is_first_user {
+                    out.push_str(&format!("<s>[INST] {} [/INST]", prompt));
+                    return out;
+                }
+            }
+            
+            // Single turn (or fast-forward) fallback
+            out.push_str(&format!("{} [/INST]", prompt));
+            
+            out
         }
     } else {
         // Llama 3, 3.1, 3.2, 3.3, and 4
-        |prompt| {
-            format!(
-                "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
-                prompt
-            )
+        |history, prompt, is_cold_start| {
+            let mut out = String::new();
+            
+            if is_cold_start {
+                let mut has_system = false;
+                for msg in history {
+                    if msg.role == "system" { has_system = true; }
+                    out.push_str(&format!("<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>", role=msg.role, content=msg.content));
+                }
+                if !has_system {
+                    out.insert_str(0, "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI.<|eot_id|>");
+                }
+            }
+            
+            out.push_str(&format!("<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n", prompt));
+            out
         }
     };
 

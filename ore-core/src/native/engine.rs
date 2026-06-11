@@ -1,6 +1,7 @@
 use anyhow::{Error as E, Result};
 use crate::native::gguf_tokenizer::TokenizerFromGguf;
 use crate::native::models;
+use crate::swap::ContextMessage;
 use std::path::Path;
 use std::fs::File;
 use std::io::Cursor;
@@ -106,7 +107,7 @@ impl OreEngine {
 pub struct ModelConfig {
     pub architecture: String,
     pub stop_tokens: Vec<u32>,
-    pub formatter: fn(&str) -> String,
+    pub formatter: fn(&[ContextMessage], &str, bool) -> String, 
 }
 
 pub struct ActiveEngine {

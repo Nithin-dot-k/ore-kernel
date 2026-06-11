@@ -95,7 +95,7 @@ impl InferenceDriver for NativeDriver {
         app_id: &str,
         stateful_paging: bool,
         prompt: &str,
-        _history: Option<Vec<ContextMessage>>,
+        history: Option<Vec<ContextMessage>>,
         tx: UnboundedSender<String>,
     ) -> Result<(), DriverError> {
         let model = model.trim().replace(':', "-");
@@ -112,6 +112,7 @@ impl InferenceDriver for NativeDriver {
         let engine_arc = Arc::clone(&self.engine);
         let safe_prompt = prompt.to_string();
         let device_clone = self.device.clone();
+        let history_clone = history.clone();
 
         let a_id = app_id.to_string();
 
@@ -120,6 +121,8 @@ impl InferenceDriver for NativeDriver {
             let active = state_guard.as_mut().unwrap();
 
             let mut current_cache_len = 0;
+            let mut is_cold_start = true;
+
             if stateful_paging {
                 if let Some(frozen_tensors) = crate::swap::Pager::page_in_kv_cache(&a_id, &model, &device_clone) {
                     // Unflatten the SSD file back into 3D Neural Tensors
@@ -130,13 +133,22 @@ impl InferenceDriver for NativeDriver {
                     current_cache_len = active.model.get_kv_cache_len(); 
                     
                     println!("-> [NATIVE DRIVER] KV-Cache injected ({} tokens). Bypassing Prefill.", current_cache_len);
+                    is_cold_start = false;
+                } else {
+                    println!("-> [NATIVE DRIVER] No valid KV-Cache found. Rebuilding brain from JSON history.");
+                    active.model.clear_kv_cache();                    
                 }
             } else {
                 // If paging is off, ensure we start with a clean brain!
                 active.model.clear_kv_cache();
             }
 
-            let formatted_prompt = (active.config.formatter)(&safe_prompt);
+            let formatted_prompt = (active.config.formatter)(
+                history_clone.as_deref().unwrap_or(&[]), 
+                &safe_prompt,
+                is_cold_start
+            );
+
             let mut tokens = active
                 .tokenizer
                 .encode(formatted_prompt, true)

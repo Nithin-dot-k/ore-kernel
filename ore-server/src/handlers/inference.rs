@@ -93,6 +93,8 @@ pub async fn ask_ai(State(state): State<Arc<KernelState>>, Path(prompt): Path<St
             content: full_response.clone(),
         });
 
+        Pager::page_out_history(app_id, &new_history);
+
         let total_chars: usize = new_history.iter().map(|m| m.content.len()).sum();
         let estimated_tokens = (total_chars / 4) as u32;
         let token_limit = manifest.memory_limits.max_json_tokens;
@@ -123,7 +125,7 @@ pub async fn ask_ai(State(state): State<Arc<KernelState>>, Path(prompt): Path<St
                         .join("\n");
                     
                     let summary_prompt = format!(
-                        "Summarize the following conversation history densely, preserving key facts, decisions, and context:\n\n{}", 
+                        "Summarize the following conversation history densely, preserving key facts, decisions, and context. Be concise:\n\n{}", 
                         text_to_summarize
                     );
 
@@ -151,7 +153,7 @@ pub async fn ask_ai(State(state): State<Arc<KernelState>>, Path(prompt): Path<St
                     let mut compacted_history = Vec::new();
                     compacted_history.push(ore_core::swap::ContextMessage {
                         role: "system".to_string(),
-                        content: format!("Previous context summary: {}", summary),
+                        content: format!("You are a helpful AI assistant. Previous context summary: {}", summary),
                     });
                     
                     // Keep the last 2 messages so the conversation flow isn't jarring to the user
@@ -183,8 +185,6 @@ pub async fn ask_ai(State(state): State<Arc<KernelState>>, Path(prompt): Path<St
                     Pager::delete_kv_cache(app_id);
                 }
             }
-        } else {
-            Pager::page_out_history(app_id, &new_history);
         }
     }
 
