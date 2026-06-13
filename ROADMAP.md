@@ -22,7 +22,7 @@ This roadmap outlines our trajectory toward true AI Virtualization. **Pull Reque
 ## Phase 2: The VRAM Manager (Current Focus)
 This phase transforms ORE from an API proxy into a true bare-metal Memory Manager, eliminating the "VRAM Context Wall."
 
-- [ ] **True KV-Cache Paging (Virtual Memory for AI):**
+- [x] **True KV-Cache Paging (Virtual Memory for AI):**
   - *Goal:* Current JSON history swapping is safe but slow. We need instant suspend/resume.
   - *Implementation:* Intercept the physical KV-Cache tensors mid-generation inside the `NativeDriver`. Serialize them using `candle_core::safetensors` (or `bincode`/`rkyv`), write them directly to NVMe SSDs, and clear the VRAM. Agents can now "sleep" on the SSD with zero RAM footprint and wake up in milliseconds.
 - [ ] **VRAM Bin Packing (Multi-Tenancy):**

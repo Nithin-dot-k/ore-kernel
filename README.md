@@ -120,11 +120,12 @@ A bare-metal inference engine powered by Hugging Face's [Candle](https://github.
 - **Native System Embedders** - A built-in `SystemEmbedder` (`ore-core/src/native/models/bert.rs` and `nomic.rs`) that loads architectures like BERT and Nomic v1.5 from Safetensors for embedding generation. Implements masked mean pooling and L2 normalization entirely in Rust. The embedder is serialized via a strict `embedder_lock` mutex to prevent multi-agent OOM crashes. When the embedding thread completes, Rust's ownership model automatically drops the model and frees all RAM to 0MB idle.
 
 **SSD Pager** (`ore-core/src/swap.rs`)
-An OS-style page file system for agent conversation history:
-- **Page Out** - Serializes an agent's full chat history (`Vec<ContextMessage>`) to JSON on the SSD (`swap/` directory).
-- **Page In** - Restores frozen context from disk back into RAM on the next request, enabling multi-turn conversations across kernel restarts.
-- **Clear Page** - Wipes an agent's frozen memory on demand via `ore clear <app_id>`.
+An OS-style page file system for agent conversation context and AI memory state:
+- **Page Out** - Serializes an agent's full chat history (`Vec<ContextMessage>`) to JSON and freezes its Attention Key-Value (KV) Cache as `.safetensors` on the SSD (`swap/` directory).
+- **Page In** - Restores frozen chat context and physical KV-Cache back into RAM/VRAM on the next request, enabling multi-turn conversations across kernel restarts without re-processing prompts.
+- **Clear Page** - Wipes an agent's frozen memory on demand via `ore clear <app_id>`, including `.json` fallbacks, `.pipe` binary pipelines, and `.safetensors`.
 - Agents opt-in to stateful paging via the `stateful_paging = true` flag in their manifest's `[resources]` section.
+- **Background Memory Compaction** - The kernel automatically cleans up stale KV-caches to prevent SSD bloat, relying on JSON fallbacks when limits are reached.
 
 **Rate Limiter** (`ore-core/src/ipc.rs`)
 A `DashMap`-backed per-agent token counter that enforces the `max_tokens_per_minute` quota declared in each app's manifest. The counter auto-resets every 60 seconds. Agents that exceed their quota are blocked before reaching the GPU.
@@ -186,16 +187,18 @@ An in-memory `HashMap`-backed registry that loads and validates all `.toml` mani
 ║                                                      ║
 ║   ┌──────────────────────────────────────────────┐   ║
 ║   │  SSD Pager  (Agent Context Swap)             │   ║
-║   │  · Page Out (RAM → SSD JSON Freeze)          │   ║
-║   │  · Page In  (SSD → RAM Restore)              │   ║
+║   │  · Page Out/In (RAM ↔ SSD JSON Freeze)       │   ║
+║   │  · Page Out/In (KV-Cache .safetensors)       │   ║
 ║   └──────────────────────────────────────────────┘   ║
 ║                                                      ║
 ║   ┌──────────────────────────────────────────────┐   ║
 ║   │  IPC Layer                                   │   ║
-║   │  · Message Bus  (Agent <-> Agent direct msg) │   ║
-║   │  · Semantic Bus (Vector memory + dot prod)   │   ║
-║   │  · Embedding Cache (Zero-Copy Arc)           │   ║
+║   │  · Message Bus  (Agent <-> Agent broadcast)  │   ║
+║   │  · Semantic Bus (Vector memory + cosine sim) │   ║
+║   │  · Embedding Cache (Hash-based dedup +       │   ║
+║   │           Zero-copy pointers)                │   ║
 ║   │  · Memory GC  (Hourly TTL-based sweep)       │   ║
+║   │  · Semantic Persistence (SSD Bincode Pipes)  │   ║
 ║   └──────────────────────────────────────────────┘   ║
 ╚══════════════════════════╤═══════════════════════════╝
                            │

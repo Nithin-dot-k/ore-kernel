@@ -151,7 +151,7 @@ curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
      http://127.0.0.1:3000/ask/What%20is%20a%20mutex
 ```
 
-**Pipeline:** Auth → Manifest lookup → Firewall (injection + PII + boundary) → Page-in history → Scheduler → Inference → Page-out history
+**Pipeline:** Auth → Manifest lookup → Firewall (injection + PII + boundary) → Page-in history & KV-Cache → Scheduler → Inference → Page-out history & KV-Cache (with Compaction support)
 
 ---
 
