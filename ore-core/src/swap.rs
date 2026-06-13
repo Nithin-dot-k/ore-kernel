@@ -32,7 +32,7 @@ impl Pager {
 
         if let Ok(data) = serde_json::to_string_pretty(history) {
             let _ = fs::write(&path, data);
-            println!("-> [PAGER] Agent '{}' history paged OUT to SSD.", app_id);
+            kprintln!("-> [PAGER] Agent '{}' history paged OUT to SSD.", app_id);
         }
     }
 
@@ -44,7 +44,7 @@ impl Pager {
             && let Ok(data) = fs::read_to_string(&path)
             && let Ok(history) = serde_json::from_str::<Vec<ContextMessage>>(&data)
         {
-            println!("-> [PAGER] Agent '{}' history paged IN from SSD.", app_id);
+            kprintln!("-> [PAGER] Agent '{}' history paged IN from SSD.", app_id);
             return history;
         }
         Vec::new()
@@ -57,7 +57,7 @@ impl Pager {
         // Bincode freezes the RAM structure into pure 1s and 0s instantly
         if let Ok(data) = bincode::serialize(chunks) {
             let _ = fs::write(&path, data);
-            println!("-> [PAGER] Semantic Pipe '{}' flushed to SSD (.pipe).", pipe_name);
+            kprintln!("-> [PAGER] Semantic Pipe '{}' flushed to SSD (.pipe).", pipe_name);
         }
     }
 
@@ -68,10 +68,10 @@ impl Pager {
             // Read raw bytes instead of strings
             if let Ok(data) = fs::read(&path) {
                 if let Ok(chunks) = bincode::deserialize::<VecDeque<Arc<MemoryChunk>>>(&data) {
-                    println!("-> [PAGER] Semantic Pipe '{}' mapped IN from SSD.", pipe_name);
+                    kprintln!("-> [PAGER] Semantic Pipe '{}' mapped IN from SSD.", pipe_name);
                     return Some(chunks);
                 } else {
-                    println!("-> [PAGER] [ERROR] Failed to deserialize pipe '{}'. The binary file might be corrupt or from an older version.", pipe_name);
+                    kprintln!("-> [PAGER] [ERROR] Failed to deserialize pipe '{}'. The binary file might be corrupt or from an older version.", pipe_name);
                 }
             }
         }
@@ -85,9 +85,9 @@ impl Pager {
         
         // Save the raw math matrices directly to the SSD
         if let Err(e) = candle_core::safetensors::save(tensors, &path) {
-            println!("-> [PAGER] [ERROR] Failed to save KV-Cache to SSD: {}", e);
+            kprintln!("-> [PAGER] [ERROR] Failed to save KV-Cache to SSD: {}", e);
         } else {
-            println!("-> [PAGER] Agent '{}' KV-Cache ({} Tensors) paged OUT to SSD.", app_id, tensors.len());
+            kprintln!("-> [PAGER] Agent '{}' KV-Cache ({} Tensors) paged OUT to SSD.", app_id, tensors.len());
         }
     }
 
@@ -98,11 +98,11 @@ impl Pager {
         if Path::new(&path).exists() {
             match candle_core::safetensors::load(&path, device) {
                 Ok(tensors) => {
-                    println!("-> [PAGER] Agent '{}' KV-Cache paged IN from SSD.", app_id);
+                    kprintln!("-> [PAGER] Agent '{}' KV-Cache paged IN from SSD.", app_id);
                     return Some(tensors);
                 }
                 Err(e) => {
-                    println!("-> [PAGER] [WARN] Failed to load KV-Cache: {}. Falling back to JSON History.", e);
+                    kprintln!("-> [PAGER] [WARN] Failed to load KV-Cache: {}. Falling back to JSON History.", e);
                 }
             }
         }
@@ -135,7 +135,7 @@ impl Pager {
             }
         }
         
-        println!("-> [PAGER] Completely wiped all swap files for Agent '{}'", app_id);
+        kprintln!("-> [PAGER] Completely wiped all swap files for Agent '{}'", app_id);
     }
 
     pub fn delete_kv_cache(app_id: &str) {
@@ -144,7 +144,7 @@ impl Pager {
                 let file_name = entry.file_name().to_string_lossy().to_string();
                 if file_name.starts_with(&format!("{}_", app_id)) && file_name.ends_with(".safetensors") {
                     let _ = fs::remove_file(entry.path());
-                    println!("-> [PAGER] Deleted stale KV-Cache for '{}' (Memory Compaction).", app_id);
+                    kprintln!("-> [PAGER] Deleted stale KV-Cache for '{}' (Memory Compaction).", app_id);
                 }
             }
         }

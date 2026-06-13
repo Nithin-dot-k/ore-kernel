@@ -8,6 +8,7 @@ use axum::{
 };
 use ore_core::ipc::{AgentMessage, SemanticBus};
 use ore_core::swap::Pager;
+use ore_core::kprintln; 
 use std::sync::Arc;
 
 pub async fn sys_share_context(
@@ -17,7 +18,7 @@ pub async fn sys_share_context(
     let manifest = match state.registry.get_app(&payload.source_app) {
         Some(m) => m,
         None => {
-            println!(
+            crate::kprintln!(
                 "->[SECURITY ALERT] Ghost Agent '{}' tried to write to memory!",
                 payload.source_app
             );
@@ -33,7 +34,7 @@ pub async fn sys_share_context(
         .allowed_semantic_pipes
         .contains(&payload.target_pipe)
     {
-        println!(
+        kprintln!(
             "-> [BLOCKED] Agent '{}' tried to write to restricted pipe '{}'.",
             payload.source_app, payload.target_pipe
         );
@@ -43,7 +44,7 @@ pub async fn sys_share_context(
         );
     }
 
-    println!(
+    kprintln!(
         "-> [SEMANTIC BUS] Verified Agent '{}' is uploading data to pipe '{}'",
         manifest.app_id, payload.target_pipe
     );
@@ -72,15 +73,15 @@ pub async fn sys_share_context(
     let total_blocks = chunks.len();
 
     if total_blocks == 0 {
-        println!("-> [SEMANTIC BUS] [WARN] Input text was empty. Skipping embedding.");
+        kprintln!("-> [SEMANTIC BUS] [WARN] Input text was empty. Skipping embedding.");
         return "SUCCESS: No content to process.".to_string();
     }
 
-    println!(
+    kprintln!(
         "-> [SEMANTIC BUS] Text split into {} overlapping windows.",
         total_blocks
     );
-    println!(
+    kprintln!(
         "-> [SEMANTIC BUS] Ready to process {} blocks. Waking up CPU Embedder...",
         total_blocks
     );
@@ -137,9 +138,9 @@ pub async fn sys_share_context(
     // ZERO-RAM ARCHITECTURE: kill the Nomic model to free memory
     if wake_embedder {
         let _ = state.driver.unload_model(&state.system_embedder).await;
-        println!("-> [SEMANTIC BUS] Knowledge embedded. CPU memory flushed (0MB Idle).");
+        kprintln!("-> [SEMANTIC BUS] Knowledge embedded. CPU memory flushed (0MB Idle).");
     } else {
-        println!("-> [SEMANTIC BUS] Knowledge embedded entirely from Cache. Zero compute used.");
+        kprintln!("-> [SEMANTIC BUS] Knowledge embedded entirely from Cache. Zero compute used.");
     }
 
     if manifest.ipc.semantic_persistence {
@@ -153,7 +154,7 @@ pub async fn sys_share_context(
             });
         }
     } else {
-        println!("-> [SEMANTIC BUS] Ephemeral Mode: Data secured in RAM only. (semantic_persistence = false)");
+        kprintln!("-> [SEMANTIC BUS] Ephemeral Mode: Data secured in RAM only. (semantic_persistence = false)");
     }
 
     "SUCCESS: Knowledge processed and stored in Semantic Bus.".to_string()
@@ -167,7 +168,7 @@ pub async fn sys_search_context(
     let manifest = match state.registry.get_app(&payload.source_app) {
         Some(m) => m,
         None => {
-            println!(
+            kprintln!(
                 "-> [SECURITY ALERT] Ghost Agent '{}' tried to read memory!",
                 payload.source_app
             );
@@ -185,7 +186,7 @@ pub async fn sys_search_context(
         .allowed_semantic_pipes
         .contains(&payload.target_pipe)
     {
-        println!(
+        kprintln!(
             "-> [BLOCKED] Agent '{}' tried to read restricted pipe '{}'.",
             payload.source_app, payload.target_pipe
         );
@@ -199,7 +200,7 @@ pub async fn sys_search_context(
             .into_response();
     }
 
-    println!(
+    kprintln!(
         "-> [SEMANTIC BUS] Verified Agent '{}' searching pipe '{}'",
         manifest.app_id, payload.target_pipe
     );
@@ -208,7 +209,7 @@ pub async fn sys_search_context(
     // We wrap the single query in a Vec for the batch-processing driver
     let query_vector =
         if let Some(cached_vec) = state.semantic_bus.get_cached_embedding(&payload.query) {
-            println!("-> [SEMANTIC BUS] Query found in System Cache. Zero compute used.");
+            kprintln!("-> [SEMANTIC BUS] Query found in System Cache. Zero compute used.");
             cached_vec
         } else {
             let _embedder_guard = state.embedder_lock.lock().await;
@@ -242,7 +243,7 @@ pub async fn sys_search_context(
     let k = payload.top_k.unwrap_or(5);
     let filter_ref = payload.filter_app.as_deref();
 
-    println!(
+    kprintln!(
         "-> [SEMANTIC BUS] Retrieving the top {} most relevant memory chunks...",
         k
     );
@@ -264,7 +265,7 @@ pub async fn sys_search_context(
         })
         .collect();
 
-    println!(
+    kprintln!(
         "-> [SEMANTIC BUS] Search complete. Returning {} results.",
         results.len()
     );
@@ -276,7 +277,7 @@ pub async fn ipc_send(
     State(state): State<Arc<KernelState>>,
     Json(payload): Json<AgentMessage>,
 ) -> String {
-    println!(
+    kprintln!(
         "-> [IPC BUS] Routing message from '{}' to '{}'",
         payload.from_app, payload.to_app
     );
@@ -287,7 +288,7 @@ pub async fn ipc_send(
         None => return format!("KERNEL ERROR: Unregistered sender '{}'.", payload.from_app),
     };
     if !manifest.ipc.allowed_agent_targets.contains(&payload.to_app) {
-        println!(
+        kprintln!(
             "-> [BLOCKED] '{}' is not authorized by its manifest to contact '{}'.",
             payload.from_app, payload.to_app
         );
@@ -300,11 +301,11 @@ pub async fn ipc_send(
     // Route the message instantly in RAM
     match state.message_bus.send_message(payload) {
         Ok(_) => {
-            println!("-> [SUCCESS] Message delivered to local channel.");
+            kprintln!("-> [SUCCESS] Message delivered to local channel.");
             "SUCCESS: Message delivered.".to_string()
         }
         Err(e) => {
-            println!("-> [WARN] {}", e);
+            kprintln!("-> [WARN] {}", e);
             format!("KERNEL ERROR: {}", e)
         }
     }
@@ -317,7 +318,7 @@ pub async fn ipc_listen(
     let _manifest = match state.registry.get_app(&app_id) {
         Some(m) => m,
         None => {
-            println!(
+            kprintln!(
                 "-> [SECURITY ALERT] Ghost Agent '{}' tried to wiretap a channel!",
                 app_id
             );
@@ -326,7 +327,7 @@ pub async fn ipc_listen(
         }
     };
 
-    println!("-> [IPC BUS] App '{}' is polling its channel...", app_id);
+    kprintln!("-> [IPC BUS] App '{}' is polling its channel...", app_id);
 
     let receiver = state.message_bus.read_message(&app_id);
 

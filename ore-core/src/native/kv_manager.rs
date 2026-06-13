@@ -10,9 +10,11 @@ impl KvManager {
         
         for (layer_idx, layer_cache) in cache.iter().enumerate() {
             if let Some((k, v)) = layer_cache {
+                // CRITICAL FIX: Force the tensors to be contiguous in memory!
+                // Safetensors will corrupt the SSD file if it receives a sliced view.
                 // Name them exactly so we know where they go when we wake up
-                map.insert(format!("layer_{}_k", layer_idx), k.clone());
-                map.insert(format!("layer_{}_v", layer_idx), v.clone());
+                map.insert(format!("layer_{}_k", layer_idx), k.contiguous().unwrap());
+                map.insert(format!("layer_{}_v", layer_idx), v.contiguous().unwrap());
             }
         }
         map

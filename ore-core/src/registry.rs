@@ -125,7 +125,7 @@ impl AppRegistry {
 
         if !path.exists() {
             fs::create_dir_all(path).map_err(|e| RegistryError::IoError(e.to_string()))?;
-            println!(
+            kprintln!(
                 "-> [REGISTRY] Created new manifests directory at {}",
                 manifests_dir
             );
@@ -145,12 +145,12 @@ impl AppRegistry {
                 })?;
 
                 if let Err(e) = manifest.validate() {
-                    println!("-> [SECURITY ALERT] Failed to load manifest for '{}'.", manifest.app_id);
-                    println!("   KERNEL ERROR: {}", e);
+                    kprintln!("-> [SECURITY ALERT] Failed to load manifest for '{}'.", manifest.app_id);
+                    kprintln!("   KERNEL ERROR: {}", e);
                     continue; 
                 }
 
-                println!("-> [REGISTRY] Verified & Loaded App: {}", manifest.app_id);
+                kprintln!("-> [REGISTRY] Verified & Loaded App: {}", manifest.app_id);
                 apps.insert(manifest.app_id.clone(), manifest);
             }
         }
@@ -181,9 +181,9 @@ impl AppManifest {
             return Err("FATAL: 'max_tokens_per_minute' cannot be 0. Agent would be permanently frozen.".to_string());
         }
 
-        if self.resources.json_history && self.memory_limits.max_json_tokens < 500 {
-            return Err("FATAL: 'max_context_tokens' must be at least 500. Otherwise the AI won't have enough memory to even generate a summary!".to_string());
-        }
+        // if self.resources.json_history && self.memory_limits.max_json_tokens < 500 {
+        //     return Err("FATAL: 'max_context_tokens' must be at least 500. Otherwise the AI won't have enough memory to even generate a summary!".to_string());
+        // }
 
         if self.resources.stateful_paging && self.memory_limits.max_kv_cache_mb == 0 {
             return Err("FATAL: 'max_kv_cache_mb' cannot be 0. Give the agent at least some physical VRAM space.".to_string());

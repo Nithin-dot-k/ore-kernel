@@ -64,6 +64,38 @@ impl OreEngine {
         }
     }
 
+    pub fn truncate_kv_cache(&mut self, len: usize) {
+        match self {
+            OreEngine::Llama(m) => {
+                for layer in m.layers.iter_mut() {
+                    if let Some((k, v)) = layer.kv_cache.as_ref() {
+                        // Dimension 2 is the sequence length. If it's larger than we want, slice it!
+                        if k.dim(2).unwrap_or(0) > len {
+                            layer.kv_cache = Some((
+                                // FIX: Make contiguous instantly after narrowing
+                                k.narrow(2, 0, len).unwrap().contiguous().unwrap(),
+                                v.narrow(2, 0, len).unwrap().contiguous().unwrap(),
+                            ));
+                        }
+                    }
+                }
+            }
+            OreEngine::Qwen2(m) => {
+                for layer in m.layers.iter_mut() {
+                    if let Some((k, v)) = layer.kv_cache.as_ref() {
+                        if k.dim(2).unwrap_or(0) > len {
+                            layer.kv_cache = Some((
+                                // FIX: Make contiguous instantly after narrowing
+                                k.narrow(2, 0, len).unwrap().contiguous().unwrap(),
+                                v.narrow(2, 0, len).unwrap().contiguous().unwrap(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn get_kv_cache_len(&self) -> usize {
         // Look at Layer 0's Key tensor. The 3rd dimension is usually the sequence length.
         let first_layer_cache = match self {
@@ -107,7 +139,7 @@ impl OreEngine {
 pub struct ModelConfig {
     pub architecture: String,
     pub stop_tokens: Vec<u32>,
-    pub formatter: fn(&[ContextMessage], &str, bool) -> String, 
+    pub formatter: fn(&[ContextMessage], &str) -> String, 
 }
 
 pub struct ActiveEngine {
@@ -135,7 +167,7 @@ impl ActiveEngine {
         }
         
         // 1. Memory Map the Weights
-        println!("-> [CANDLE] Allocating Virtual Memory Pointer via mmap...");
+        kprintln!("-> [CANDLE] Allocating Virtual Memory Pointer via mmap...");
         let file = File::open(&gguf_path)?;
         let mmap = unsafe { Mmap::map(&file)? };
         let mut cursor = Cursor::new(&mmap[..]);
@@ -146,7 +178,7 @@ impl ActiveEngine {
             Some(gguf_file::Value::String(arch)) => arch.clone(),
             _ => "unknown".to_string(),
         };
-        println!("-> [CANDLE] Detected Architecture: '{}'", arch_name);
+        kprintln!("-> [CANDLE] Detected Architecture: '{}'", arch_name);
 
         // 3. Tokenizer Resolution
         let global_tokenizer_name = if model_name.to_lowercase().contains("qwen2.5") {
@@ -181,17 +213,17 @@ impl ActiveEngine {
         
         // universal tokenizer fallback
         let tokenizer = if Path::new(&local_tokenizer_path).exists() {
-            println!("-> [CANDLE] Using Local Dictionary...");
+            kprintln!("-> [CANDLE] Using Local Dictionary...");
             Tokenizer::from_file(&local_tokenizer_path).map_err(E::msg)?
         } else if Path::new(&global_path).exists() {
-            println!(
+            kprintln!(
                 "-> [CANDLE] Local dictionary not found. Using Universal OS Dictionary for '{}'...",
                 arch_name
             );
             Tokenizer::from_file(&global_path).map_err(E::msg)?
         } else {
             // THE RAW GGUF EXTRACTOR
-            println!(
+            kprintln!(
                 "-> [CANDLE] [WARN] No JSON found. Extracting Tokenizer directly from GGUF metadata..."
             );
             let tok_file = File::open(&gguf_path)?;
@@ -201,14 +233,14 @@ impl ActiveEngine {
             let extracted_tokenizer = Tokenizer::from_gguf(&content).map_err(E::msg)?;
 
             // SAVE IT TO DISK
-            println!(
+            kprintln!(
                 "-> [CANDLE] JIT Cache: Saving extracted dictionary to {}...",
                 local_tokenizer_path.display()
             );
             if let Err(e) = extracted_tokenizer.save(&local_tokenizer_path, true) {
-                println!("-> [CANDLE] [WARN] Could not save cached tokenizer: {}", e);
+                kprintln!("-> [CANDLE] [WARN] Could not save cached tokenizer: {}", e);
             } else {
-                println!("-> [CANDLE] [SUCCESS] Dictionary permanently cached.");
+                kprintln!("-> [CANDLE] [SUCCESS] Dictionary permanently cached.");
             }
 
             extracted_tokenizer

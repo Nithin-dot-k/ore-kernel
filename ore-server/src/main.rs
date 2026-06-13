@@ -20,19 +20,20 @@ use ore_core::ipc::{MessageBus, RateLimiter, SemanticBus};
 use ore_core::native::NativeDriver;
 use ore_core::registry::AppRegistry;
 use ore_core::scheduler::GpuScheduler;
+use ore_core::kprintln; 
 
 use crate::middleware::auth_middleware;
 use crate::state::{KernelState, OreConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== ORE SYSTEM KERNEL BOOTING ===");
+    kprintln!("=== ORE SYSTEM KERNEL BOOTING ===");
 
     let session_token = Uuid::new_v4().to_string();
     fs::write("ore-kernel.token", &session_token).expect("Failed to write security token.");
-    println!("-> [SECURITY] Master Token generated and secured to disk.");
+    kprintln!("-> [SECURITY] Master Token generated and secured to disk.");
 
-    println!("-> Sweeping /manifests for installed Apps...");
+    kprintln!("-> Sweeping /manifests for installed Apps...");
     let app_registry =
         AppRegistry::boot_load("../manifests").expect("FATAL: Failed to initialize App Registry");
 
@@ -41,10 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config: OreConfig = toml::from_str(&config_str).unwrap();
 
     let driver: Arc<dyn InferenceDriver> = if config.system.engine == "native" {
-        println!("-> [BOOT] Engaging Native Candle Engine...");
+        kprintln!("-> [BOOT] Engaging Native Candle Engine...");
         Arc::new(NativeDriver::new())
     } else {
-        println!("-> [BOOT] Engaging Ollama API Driver...");
+        kprintln!("-> [BOOT] Engaging Ollama API Driver...");
         Arc::new(OllamaDriver::new("http://127.0.0.1:11434"))
     };
 
@@ -93,14 +94,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             // Wake up every 1 hour (3600 seconds)
             tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-            println!("-> [SYSTEM] Running routine memory Garbage Collection...");
+            kprintln!("-> [SYSTEM] Running routine memory Garbage Collection...");
             gc_bus.run_garbage_collection();
         }
     });
 
     let addr = "127.0.0.1:3000";
-    println!("=== ORE KERNEL IS ONLINE ===");
-    println!("Listening on http://{}", addr);
+    kprintln!("=== ORE KERNEL IS ONLINE ===");
+    kprintln!("Listening on http://{}", addr);
 
     let listener = TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

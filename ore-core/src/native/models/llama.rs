@@ -51,9 +51,9 @@ pub fn load<R: Read + Seek>(
     let name_lower = model_name.to_lowercase();
     let is_llama_2 = name_lower.contains("llama2") || name_lower.contains("llama-2");
 
-    let formatter: fn(&[ContextMessage], &str, bool) -> String = if name_lower.contains("-base") {
+    let formatter: fn(&[ContextMessage], &str) -> String = if name_lower.contains("-base") {
         // base model formatter (no special tokens, just pass through)
-        |history, prompt, _is_cold_start| {
+        |history, prompt| {
             let mut out = String::new();
             for msg in history { out.push_str(&format!("{}: {}\n", msg.role, msg.content)); }
             out.push_str(&format!("user: {}\n", prompt));
@@ -61,31 +61,30 @@ pub fn load<R: Read + Seek>(
         }
     } else if is_llama_2 {
         // llama 2 formatter
-        |history, prompt, is_cold_start| {
+        |history, prompt| {
             let mut out = String::new();
             
-            if is_cold_start {
-                out.push_str("<s>[INST] <<SYS>>\nYou are a helpful AI.\n<</SYS>>\n\n");
-                
-                let mut is_first_user = true;
-                for msg in history {
-                    if msg.role == "user" {
-                        if is_first_user {
-                            out.push_str(&format!("{} [/INST] ", msg.content));
-                            is_first_user = false;
-                        } else {
-                            out.push_str(&format!("<s>[INST] {} [/INST] ", msg.content));
-                        }
-                    } else if msg.role == "assistant" {
-                        out.push_str(&format!("{} </s>", msg.content));
+            out.push_str("<s>[INST] <<SYS>>\nYou are a helpful AI.\n<</SYS>>\n\n");
+            
+            let mut is_first_user = true;
+            for msg in history {
+                if msg.role == "user" {
+                    if is_first_user {
+                        out.push_str(&format!("{} [/INST] ", msg.content));
+                        is_first_user = false;
+                    } else {
+                        out.push_str(&format!("<s>[INST] {} [/INST] ", msg.content));
                     }
-                }
-                
-                if !is_first_user {
-                    out.push_str(&format!("<s>[INST] {} [/INST]", prompt));
-                    return out;
+                } else if msg.role == "assistant" {
+                    out.push_str(&format!("{} </s>", msg.content));
                 }
             }
+            
+            if !is_first_user {
+                out.push_str(&format!("<s>[INST] {} [/INST]", prompt));
+                return out;
+            }
+            
             
             // Single turn (or fast-forward) fallback
             out.push_str(&format!("{} [/INST]", prompt));
@@ -94,18 +93,16 @@ pub fn load<R: Read + Seek>(
         }
     } else {
         // Llama 3, 3.1, 3.2, 3.3, and 4
-        |history, prompt, is_cold_start| {
+        |history, prompt| {
             let mut out = String::new();
             
-            if is_cold_start {
-                let mut has_system = false;
-                for msg in history {
-                    if msg.role == "system" { has_system = true; }
-                    out.push_str(&format!("<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>", role=msg.role, content=msg.content));
-                }
-                if !has_system {
-                    out.insert_str(0, "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI.<|eot_id|>");
-                }
+            let mut has_system = false;
+            for msg in history {
+                if msg.role == "system" { has_system = true; }
+                out.push_str(&format!("<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>", role=msg.role, content=msg.content));
+            }
+            if !has_system {
+                out.insert_str(0, "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI.<|eot_id|>");
             }
             
             out.push_str(&format!("<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n", prompt));
@@ -122,7 +119,7 @@ pub fn load<R: Read + Seek>(
     Ok((OreEngine::Llama(m), cfg))
 }
 
-pub const MAX_SEQ_LEN: usize = 4096;
+// pub const MAX_SEQ_LEN: usize = 4096;
 
 // QMatMul wrapper adding some tracing.
 #[derive(Debug, Clone)]
@@ -373,6 +370,7 @@ pub struct ModelWeights {
 fn precomput_freqs_cis(
     head_dim: usize,
     freq_base: f32,
+    max_seq_len: usize,
     device: &Device,
 ) -> Result<(Tensor, Tensor)> {
     let theta: Vec<_> = (0..head_dim)
@@ -380,9 +378,9 @@ fn precomput_freqs_cis(
         .map(|i| 1f32 / freq_base.powf(i as f32 / head_dim as f32))
         .collect();
     let theta = Tensor::new(theta.as_slice(), device)?;
-    let idx_theta = Tensor::arange(0, MAX_SEQ_LEN as u32, device)?
+    let idx_theta = Tensor::arange(0, max_seq_len as u32, device)?
         .to_dtype(DType::F32)?
-        .reshape((MAX_SEQ_LEN, 1))?
+        .reshape((max_seq_len, 1))?
         .matmul(&theta.reshape((1, theta.elem_count()))?)?;
     let cos = idx_theta.cos()?;
     let sin = idx_theta.sin()?;
@@ -392,7 +390,7 @@ fn precomput_freqs_cis(
 impl ModelWeights {
     pub fn from_ggml(mut ct: ggml_file::Content, gqa: usize) -> Result<Self> {
         let head_dim = (ct.hparams.n_embd / ct.hparams.n_head) as usize;
-        let (cos, sin) = precomput_freqs_cis(head_dim, 10000., &ct.device)?;
+        let (cos, sin) = precomput_freqs_cis(head_dim, 10000., 4096, &ct.device)?;
         let neg_inf = Tensor::new(f32::NEG_INFINITY, &ct.device)?;
         let tok_embeddings = ct.remove("tok_embeddings.weight")?;
         let tok_embeddings = tok_embeddings.dequantize(&ct.device)?;
@@ -481,7 +479,10 @@ impl ModelWeights {
         let rope_freq_base = md_get("llama.rope.freq_base")
             .and_then(|m| m.to_f32())
             .unwrap_or(10000f32);
-        let (cos, sin) = precomput_freqs_cis(rope_dim, rope_freq_base, device)?;
+        let context_length = md_get("llama.context_length")
+            .and_then(|v| v.to_u32())
+            .unwrap_or(32768) as usize;
+        let (cos, sin) = precomput_freqs_cis(rope_dim, rope_freq_base, context_length, device)?;
         let neg_inf = Tensor::new(f32::NEG_INFINITY, device)?;
 
         let tok_embeddings_q = ct.tensor(reader, "token_embd.weight", device)?;

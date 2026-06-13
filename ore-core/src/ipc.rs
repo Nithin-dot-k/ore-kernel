@@ -337,7 +337,7 @@ impl SemanticBus {
             "sentence_aware" => {
                 // Future Implementation: Use a regex to split by [. ! ?]
                 // For now, fallback to sliding window to prevent crashes.
-                println!(
+                kprintln!(
                     "-> [KERNEL WARN] SentenceAware not yet implemented. Falling back to SlidingWindow."
                 );
                 Self::create_sliding_windows(text, size, overlap)
@@ -345,7 +345,7 @@ impl SemanticBus {
 
             "paragraph" => {
                 // Future Implementation: Split by \n\n
-                println!(
+                kprintln!(
                     "-> [KERNEL WARN] Paragraph not yet implemented. Falling back to SlidingWindow."
                 );
                 Self::create_sliding_windows(text, size, overlap)
@@ -376,7 +376,7 @@ impl SemanticBus {
 
             let cleaned_cache = initial_cache_size - self.embedding_cache.len();
             if cleaned_cache > 0 {
-                println!(
+                kprintln!(
                     "-> [KERNEL GC] Swept {} stale embedding calculations from RAM.",
                     cleaned_cache
                 );
@@ -413,7 +413,7 @@ impl SemanticBus {
             self.memory_pipes.retain(|_, (_, chunks)| !chunks.is_empty());
 
             if chunks_swept > 0 {
-                println!(
+                kprintln!(
                     "-> [KERNEL GC] Evicted {} persistent pipes to SSD. Swept {} stale ephemeral chunks.",
                     chunks_swept, pipes_cleaned
                 );

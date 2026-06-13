@@ -1,4 +1,5 @@
 use crate::state::KernelState;
+use ore_core::kprintln; 
 use axum::extract::{Path, State};
 use ore_core::swap::Pager;
 use std::sync::Arc;
@@ -203,7 +204,7 @@ pub async fn list_manifests(State(state): State<Arc<KernelState>>) -> String {
 }
 
 pub async fn clear_memory(Path(app_id): Path<String>) -> String {
-    println!(
+    kprintln!(
         "-> [KERNEL COMMAND] Wiping SSD Memory for Agent '{}'",
         app_id
     );

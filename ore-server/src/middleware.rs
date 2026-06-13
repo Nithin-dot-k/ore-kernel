@@ -1,4 +1,5 @@
 use crate::state::KernelState;
+use ore_core::kprintln; 
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
@@ -22,6 +23,6 @@ pub async fn auth_middleware(
         }
     }
 
-    println!("-> [SECURITY ALERT] Blocked unauthorized network connection attempt!");
+    kprintln!("-> [SECURITY ALERT] Blocked unauthorized network connection attempt!");
     Err(StatusCode::UNAUTHORIZED)
 }

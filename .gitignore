@@ -3,6 +3,7 @@
 *.gguf
 *.safetensors
 *.xml
+*.json
 
 /models/
 /tokenizers/

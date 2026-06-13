@@ -41,19 +41,19 @@ impl GpuScheduler {
         let is_hot_swap = state.active_model.as_ref() == Some(&requested_model.to_string());
 
         if is_hot_swap {
-            println!(
+            kprintln!(
                 "-> [SCHEDULER] Shared Memory Hit! '{}' is already hot.",
                 requested_model
             );
             state.active_users += 1;
         } else {
             if let Some(old) = &state.active_model {
-                println!(
+                kprintln!(
                     "-> [SCHEDULER] Context Switch: Evicting '{}' -> Loading '{}'",
                     old, requested_model
                 );
             } else {
-                println!(
+                kprintln!(
                     "-> [SCHEDULER] Cold Start: Loading '{}' into VRAM.",
                     requested_model
                 );

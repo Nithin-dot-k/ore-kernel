@@ -26,7 +26,7 @@ impl SystemEmbedder {
             )));
         }
 
-        println!("-> [BERT] Loading System Embedder Dictionary...");
+        kprintln!("-> [BERT] Loading System Embedder Dictionary...");
         let mut tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(E::msg)?;
 
         let pp = PaddingParams {
@@ -42,11 +42,11 @@ impl SystemEmbedder {
             .with_truncation(Some(tp))
             .map_err(E::msg)?;
 
-        println!("-> [BERT] Loading Configuration...");
+        kprintln!("-> [BERT] Loading Configuration...");
         let config_str = fs::read_to_string(&config_path)?;
         let config: Config = serde_json::from_str(&config_str)?;
 
-        println!("-> [BERT] Loading Neural Weights into RAM...");
+        kprintln!("-> [BERT] Loading Neural Weights into RAM...");
         let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(&[&safetensors_path], DType::F32, device)?
         };

@@ -29,7 +29,7 @@ impl Default for NativeDriver {
 
 impl NativeDriver {
     pub fn new() -> Self {
-        println!("-> [CANDLE] Probing Motherboard for Hardware Compute...");
+        kprintln!("-> [CANDLE] Probing Motherboard for Hardware Compute...");
         let device = if candle_core::utils::cuda_is_available() {
             Device::new_cuda(0).unwrap_or(Device::Cpu)
         } else if candle_core::utils::metal_is_available() {
@@ -121,7 +121,6 @@ impl InferenceDriver for NativeDriver {
             let active = state_guard.as_mut().unwrap();
 
             let mut current_cache_len = 0;
-            let mut is_cold_start = true;
 
             if stateful_paging {
                 if let Some(frozen_tensors) = crate::swap::Pager::page_in_kv_cache(&a_id, &model, &device_clone) {
@@ -132,10 +131,9 @@ impl InferenceDriver for NativeDriver {
                     active.model.set_kv_cache(cache);
                     current_cache_len = active.model.get_kv_cache_len(); 
                     
-                    println!("-> [NATIVE DRIVER] KV-Cache injected ({} tokens). Bypassing Prefill.", current_cache_len);
-                    is_cold_start = false;
+                    kprintln!("-> [NATIVE DRIVER] KV-Cache injected ({} tokens). Bypassing Prefill.", current_cache_len);
                 } else {
-                    println!("-> [NATIVE DRIVER] No valid KV-Cache found. Rebuilding brain from JSON history.");
+                    kprintln!("-> [NATIVE DRIVER] No valid KV-Cache found. Rebuilding brain from JSON history.");
                     active.model.clear_kv_cache();                    
                 }
             } else {
@@ -146,7 +144,6 @@ impl InferenceDriver for NativeDriver {
             let formatted_prompt = (active.config.formatter)(
                 history_clone.as_deref().unwrap_or(&[]), 
                 &safe_prompt,
-                is_cold_start
             );
 
             let mut tokens = active
@@ -158,13 +155,56 @@ impl InferenceDriver for NativeDriver {
 
             let mut start_pos = current_cache_len;
 
-            for index in 0..8192 {
-                let context_size = if index > 0 { 1 } else { tokens.len() };
+            // Failsafe: If the JSON history was compacted, the cache length will be larger than the new tokens!
+            // We must clear the cache and do a cold start.
+            if start_pos > tokens.len() {
+                active.model.clear_kv_cache();
+                start_pos = 0;
+            }
 
-                let input_tensor = Tensor::new(&tokens[tokens.len() - context_size..], &device_clone)
-                    .unwrap()
-                    .unsqueeze(0)
-                    .unwrap();
+            if start_pos > 0 {
+                let cached_last_token = tokens[start_pos - 1];
+                if active.config.stop_tokens.contains(&cached_last_token) {
+                    // Pull start_pos back by 1 so we overwrite the Stop Token in VRAM!
+                    start_pos -= 1;
+                }
+            }
+
+            let overlap_start = if start_pos > 0 { start_pos - 1 } else { 0 };
+
+            // TRUNCATE THE KV-CACHE IN VRAM TO MATCH THE OVERLAP
+            if overlap_start < current_cache_len  {
+                active.model.truncate_kv_cache(overlap_start);
+            }
+
+            let unprocessed_tokens = tokens[overlap_start..].to_vec();
+
+            // Reset start_pos so the GPU loop math is perfectly aligned
+            start_pos = overlap_start;
+
+            println!("-> [NATIVE DRIVER] [DEBUG] Computing {} new tokens at position {}...", unprocessed_tokens.len(), start_pos);
+
+            for index in 0..8192 {
+
+                let input_len = if index == 0 { unprocessed_tokens.len() } else { 1 };
+                
+                if input_len == 0 { break; } // Edge case protection
+
+                // Create the tensor instantly without holding a slice reference open!
+                let input_tensor = if index == 0 {
+                    Tensor::new(unprocessed_tokens.as_slice(), &device_clone)
+                        .unwrap()
+                        .unsqueeze(0)
+                        .unwrap()
+                } else {
+                    // Dereference (*) to COPY the last token out of the array. No borrows!
+                    let last_token = *tokens.last().unwrap();
+                    Tensor::new(&[last_token], &device_clone)
+                        .unwrap()
+                        .unsqueeze(0)
+                        .unwrap()
+                };
+
                 let logits = active.model.forward(&input_tensor, start_pos).unwrap();
                 
                 let logits = logits
@@ -186,11 +226,15 @@ impl InferenceDriver for NativeDriver {
                 }
 
                 tokens.push(next_token_id);
-                start_pos += context_size;
+
+                // CRITICAL: Advance start_pos by how many tokens we just processed!
+                start_pos += input_len;
             }
 
+            drop(tx);
+
             if stateful_paging {
-                println!("-> [NATIVE DRIVER] Freezing Brain State to SSD...");
+                kprintln!("-> [NATIVE DRIVER] Freezing Brain State to SSD...");
                 
                 // Extract the raw electricity from the Engine
                 let raw_cache = active.model.get_kv_cache();
@@ -297,7 +341,7 @@ impl InferenceDriver for NativeDriver {
                 .and_then(|v| v.as_str())
                 .unwrap_or("BertModel"); // Default to standard BERT if missing
 
-            println!("-> [NATIVE] Detected Embedder Architecture: '{}'", arch);
+            kprintln!("-> [NATIVE] Detected Embedder Architecture: '{}'", arch);
 
             let vectors = match arch {
                 "NomicBertModel" => {
