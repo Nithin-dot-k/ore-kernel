@@ -88,7 +88,7 @@ An in-memory vector database that enables agents to share knowledge through natu
 
 ```rust
 pub struct SemanticBus {
-    memory_pipes: DashMap<String, VecDeque<Arc<MemoryChunk>>>,    // Named data pipes
+    memory_pipes: DashMap<String, (bool, VecDeque<Arc<MemoryChunk>>)>, // Pipe persistence flag + chunks
     embedding_cache: DashMap<u64, (Arc<Vec<f32>>, u64)>,          // Hash → (vector, timestamp)
     cache_ttl_secs: u64,
     pipe_ttl_secs: u64,
@@ -109,7 +109,7 @@ pub struct MemoryChunk {
 ### Writing Knowledge
 
 ```rust
-pub fn write_chunk(&self, pipe_name: &str, text: String, vector: Vec<f32>, source_app: &str) {
+pub fn write_chunk(&self, pipe_name: &str, text: String, mut vector: Vec<f32>, source_app: &str, is_persistent: bool) {
     // 1. Cache the embedding (hash → vector) for deduplication
     let hash = Self::hash_text(&text);
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -121,7 +121,7 @@ pub fn write_chunk(&self, pipe_name: &str, text: String, vector: Vec<f32>, sourc
 }
 
 /// Bypasses cache insertion to directly write an existing cached pointer to a new pipe
-pub fn write_cached_chunk(&self, pipe_name: &str, text: String, arc_vector: Arc<Vec<f32>>, source_app: &str) {
+pub fn write_cached_chunk(&self, pipe_name: &str, text: String, arc_vector: Arc<Vec<f32>>, source_app: &str, is_persistent: bool) {
     // ZERO COPY - We just pass the memory pointer!
     // ... constructs MemoryChunk using the Arc pointer and pushes to pipe
 }
@@ -222,15 +222,22 @@ pub fn run_garbage_collection(&self) {
         current_time.saturating_sub(*timestamp) < self.cache_ttl_secs
     });
 
-    // 2. Sweep each pipe - evict chunks older than pipe_ttl_secs
+    // 2. Sweep each pipe
     for mut pipe_ref in self.memory_pipes.iter_mut() {
-        pipe_contents.retain(|chunk| {
-            current_time.saturating_sub(chunk.timestamp) < self.pipe_ttl_secs
-        });
+        let (is_persistent, pipe_contents) = pipe_ref.value_mut();
+        if *is_persistent {
+            // Persistent pipes rely on SSD paging, evict from RAM to save memory
+            pipe_contents.clear();
+        } else {
+            // Ephemeral pipes evict old chunks natively
+            pipe_contents.retain(|chunk| {
+                current_time.saturating_sub(chunk.timestamp) < self.pipe_ttl_secs
+            });
+        }
     }
 
     // 3. Prune empty pipes
-    self.memory_pipes.retain(|_, chunks| !chunks.is_empty());
+    self.memory_pipes.retain(|_, (_, chunks)| !chunks.is_empty());
 }
 ```
 

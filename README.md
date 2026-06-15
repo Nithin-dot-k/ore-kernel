@@ -105,7 +105,7 @@ pipe_ttl_hours = 32    # Semantic pipe data lifetime (0 = infinite)
 A multi-layered security pipeline that processes every prompt before it reaches the model:
 - **Injection Blocker** - Heuristic analysis detecting jailbreaks (`"ignore previous"`), system probes (`"system prompt"`, `"root password"`), and override attempts (`"bypass"`, `"forget everything"`).
 - **PII Redactor** - Regex-powered scanner that strips emails and credit card numbers from prompts before inference. Uses `OnceLock`-cached compiled patterns for zero recompilation overhead.
-- **Boundary Enforcer** - Wraps user input in randomized XML-like tags with UUID-based boundaries, preventing attackers from escaping the data context.
+- **Boundary Enforcer** - Wraps user input in randomized XML-like tags with UUID-based boundaries, preventing attackers from escaping the data context. *(Note: Temporarily disabled for KV-Cache testing)*
 
 **GPU Scheduler** (`ore-core/src/scheduler.rs`)
 A dedicated scheduling module built on `tokio::sync::Semaphore` with RAII-based `GpuLease` locks. The scheduler tracks VRAM state (`active_model`, `active_users`) and performs **hot-swap detection** - if the requested model is already loaded, it skips the reload and shares the existing instance. On a model mismatch, it performs a **context switch**, evicting the old model before loading the new one. When the `GpuLease` drops out of scope, the GPU lock is automatically released.

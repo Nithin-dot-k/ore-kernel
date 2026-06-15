@@ -62,8 +62,9 @@ Show models currently loaded in GPU VRAM.
 ore ps
 
 # Output:
-# MODEL              SIZE        VRAM
-# qwen2.5:0.5b       500MB       500MB
+# MODEL                     | TOTAL RAM    | GPU VRAM
+# ----------------------------------------------------------
+# qwen2.5:0.5b              | 476       MB | 476       MB
 ```
 
 ---
@@ -76,9 +77,10 @@ List all locally installed models on disk.
 ore ls
 
 # Output:
-# MODEL              SIZE        MODIFIED
-# qwen2.5:0.5b       500MB       2026-03-24 14:30
-# llama3.2:1b        1.2GB       2026-03-22 09:15
+# REPOSITORY                | SIZE       | UPDATED
+# ------------------------------------------------------
+# qwen2.5:0.5b              | 0.49 GB   | 2026-03-24 14:30:00
+# llama3.2:1b               | 1.12 GB   | 2026-03-22 09:15:00
 ```
 
 **Flags:**

@@ -22,8 +22,8 @@ curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
 ```
 
 **Response:**
-```json
-"ORE Kernel Online | Engine: native"
+```text
+ORE Kernel is ALIVE. Powered by: native
 ```
 
 ---
@@ -38,14 +38,10 @@ curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
 ```
 
 **Response:**
-```json
-[
-  {
-    "model_name": "qwen2.5:0.5b",
-    "size_bytes": 524288000,
-    "size_vram_bytes": 524288000
-  }
-]
+```text
+MODEL                     | TOTAL RAM    | GPU VRAM
+----------------------------------------------------------
+qwen2.5:0.5b              | 500       MB | 500       MB
 ```
 
 ---
@@ -60,14 +56,10 @@ curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
 ```
 
 **Response:**
-```json
-[
-  {
-    "name": "qwen2.5:0.5b",
-    "size_bytes": 524288000,
-    "modified_at": "2026-03-24 14:30"
-  }
-]
+```text
+REPOSITORY                | SIZE       | UPDATED
+------------------------------------------------------
+qwen2.5:0.5b              | 0.49 GB   | 2026-03-24 14:30:00
 ```
 
 ---
@@ -81,6 +73,15 @@ curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
      http://127.0.0.1:3000/agents
 ```
 
+**Response:**
+```text
+AGENT ID             | VERSION    | ALLOWED MODELS       | PRIORITY   | STATUS
+----------------------------------------------------------------------------------
+openclaw             | 1.0.0      | llama3.2:1b          | NORMAL     | SECURED
+terminal_user        | 1.0.0      | llama3.2:1b          | NORMAL     | SECURED
+cyber_spider         | 1.0.0      | qwen2.5:0.5b         | NORMAL     | UNSAFE
+```
+
 ---
 
 ### `GET /manifests`
@@ -90,6 +91,15 @@ Raw permission matrix for all registered manifests.
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
      http://127.0.0.1:3000/manifests
+```
+
+**Response:**
+```text
+MANIFEST FILE        | NETWORK    | FILE I/O      | EXECUTION       | PII SCRUBBING
+------------------------------------------------------------------------------------
+openclaw.toml        | ENABLED    | Read-Only     | WASM Sandbox    | ACTIVE
+terminal_user.toml   | BLOCKED    | Air-gapped    | Disabled        | ACTIVE
+cyber_spider.toml    | ENABLED    | Read-Only     | SHELL (RISK)    | OFF (RISK)
 ```
 
 ---
@@ -103,6 +113,11 @@ curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
      http://127.0.0.1:3000/pull/qwen2.5:0.5b
 ```
 
+**Response:**
+```text
+SUCCESS: Model 'qwen2.5:0.5b' installed.
+```
+
 ---
 
 ### `GET /load/:model`
@@ -112,6 +127,11 @@ Pre-load a model into VRAM for zero-latency inference.
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
      http://127.0.0.1:3000/load/qwen2.5:0.5b
+```
+
+**Response:**
+```text
+SUCCESS: Model 'qwen2.5:0.5b' loaded.
 ```
 
 ---
@@ -125,6 +145,11 @@ curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
      http://127.0.0.1:3000/expel/qwen2.5:0.5b
 ```
 
+**Response:**
+```text
+SUCCESS: Model 'qwen2.5:0.5b' has been forcefully evicted from GPU VRAM.
+```
+
 ---
 
 ### `GET /clear/:app_id`
@@ -134,6 +159,11 @@ Wipe an agent's SSD swap memory (frozen context).
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
      http://127.0.0.1:3000/clear/my_agent
+```
+
+**Response:**
+```text
+SUCCESS: Memory for Agent 'my_agent' has been wiped clean.
 ```
 
 ---

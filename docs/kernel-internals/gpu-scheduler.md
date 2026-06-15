@@ -24,6 +24,7 @@ pub struct GpuScheduler {
 
 struct GpuState {
     active_model: Option<String>,      // Which model is currently loaded
+    active_app_id: Option<String>,     // Which agent owns the KV-Cache
     active_users: u32,                 // How many concurrent leases exist
 }
 ```
@@ -46,7 +47,7 @@ When a `GpuLease` goes out of scope, Rust's drop semantics automatically release
 ### Acquiring a Lease
 
 ```rust
-pub async fn request_gpu(&self, requested_model: &str) -> GpuLease {
+pub async fn request_gpu(&self, requested_model: &str, app_id: &str) -> GpuLease {
     // 1. Acquire the semaphore (blocks if GPU is busy)
     let permit = Arc::clone(&self.execution_lock)
         .acquire_owned().await.unwrap();
@@ -54,14 +55,23 @@ pub async fn request_gpu(&self, requested_model: &str) -> GpuLease {
     // 2. Check VRAM state
     let mut state = self.state.lock().await;
 
-    let is_hot_swap = state.active_model.as_ref() == Some(&requested_model.to_string());
+    let is_same_model = state.active_model.as_deref() == Some(requested_model);
+    let is_same_agent = state.active_app_id.as_deref() == Some(app_id);
 
-    if is_hot_swap {
-        // Same model already loaded - share the instance
+    if is_same_model && is_same_agent {
+        // [TIER 1] PERFECT HIT
+        // Same model and agent already loaded - share the instance
         state.active_users += 1;
+    } else if is_same_model && !is_same_agent {
+        // [TIER 2] AGENT SWAP (The Massive Optimization)
+        // Keep model weights, but swap out the KV-Cache
+        state.active_app_id = Some(app_id.to_string());
+        state.active_users = 1;
     } else {
+        // [TIER 3] MODEL SWAP (Cold Start)
         // Different model - evict the old one, load the new one
         state.active_model = Some(requested_model.to_string());
+        state.active_app_id = Some(app_id.to_string());
         state.active_users = 1;
     }
 
@@ -81,17 +91,21 @@ Agent A requests "qwen2.5:0.5b"
 └───────────────┬──────────────────────┘
                 ▼
 ┌──────────────────────────────────────┐
-│ Check GpuState.active_model          │
+│ Check GpuState                       │
 │                                      │
-│  "qwen2.5:0.5b" == "qwen2.5:0.5b"?   │
-│                                      │
-│  YES → Hot Swap! Skip reload.        │
+│  Model matches & Agent matches?      │
+│  YES → [TIER 1] Perfect Hit.         │
 │         active_users += 1            │
 │                                      │
-│  NO  → Context Switch.               │
-│         Log eviction.                │
+│  Model matches but Agent differs?    │
+│  YES → [TIER 2] Agent Swap.          │
+│         Retain weights, evict KV.    │
+│         active_app_id = new agent    │
+│                                      │
+│  Model differs?                      │
+│  YES → [TIER 3] Model Swap.          │
+│         Evict weights & KV.          │
 │         active_model = new model     │
-│         active_users = 1             │
 └───────────────┬──────────────────────┘
                 ▼
          Return GpuLease

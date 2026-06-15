@@ -136,6 +136,8 @@ impl BoundaryEnforcer {
 
 ### Design Decisions
 
+*(Note: Boundary Enforcer is temporarily disabled in the codebase to facilitate KV-Cache testing, but the following remains the architectural intent.)*
+
 - **Randomized tags** - The XML-like tag includes 8 hex characters from a UUID v4. An attacker cannot predict the tag and pre-close it in their prompt (e.g., crafting `</user_input_...>` to escape the boundary).
 - **Instruction prefix** - The wrapper explicitly tells the model not to execute commands or reveal the boundary tags. This acts as a structural guardrail on top of the heuristic injection blocker.
 - **Per-request uniqueness** - Every inference call generates a fresh UUID, so even if an attacker observes one tag, it won't be reused.
