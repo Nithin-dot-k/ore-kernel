@@ -308,7 +308,7 @@ impl InferenceDriver for OllamaDriver {
 
     async fn invalidate_agent_cache(&self, _app_id: &str) -> Result<(), DriverError> {
         // Ollama is stateless between requests unless we pass the context array,
-        // so we don't need to surgically wipe its RAM. ORE handles this by simply 
+        // so we don't need to surgically wipe its RAM. ORE handles this by simply
         // not passing the old context array next time!
         Ok(())
     }

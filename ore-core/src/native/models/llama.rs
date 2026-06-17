@@ -19,12 +19,12 @@
 use crate::native::engine::{ModelConfig, OreEngine};
 use crate::native::models::llama::ModelWeights as LlamaModel;
 use crate::swap::ContextMessage;
-use std::collections::HashMap;
-use candle_transformers::quantized_nn::RmsNorm;
 use candle_core::quantized::QTensor;
 use candle_core::quantized::{ggml_file, gguf_file};
 use candle_core::{DType, Device, IndexOp, Result, Tensor};
 use candle_nn::{Embedding, Module};
+use candle_transformers::quantized_nn::RmsNorm;
+use std::collections::HashMap;
 use std::io::{Read, Seek};
 use tokenizers::Tokenizer;
 
@@ -55,7 +55,9 @@ pub fn load<R: Read + Seek>(
         // base model formatter (no special tokens, just pass through)
         |history, prompt| {
             let mut out = String::new();
-            for msg in history { out.push_str(&format!("{}: {}\n", msg.role, msg.content)); }
+            for msg in history {
+                out.push_str(&format!("{}: {}\n", msg.role, msg.content));
+            }
             out.push_str(&format!("user: {}\n", prompt));
             out
         }
@@ -63,9 +65,9 @@ pub fn load<R: Read + Seek>(
         // llama 2 formatter
         |history, prompt| {
             let mut out = String::new();
-            
+
             out.push_str("<s>[INST] <<SYS>>\nYou are a helpful AI.\n<</SYS>>\n\n");
-            
+
             let mut is_first_user = true;
             for msg in history {
                 if msg.role == "user" {
@@ -79,32 +81,40 @@ pub fn load<R: Read + Seek>(
                     out.push_str(&format!("{} </s>", msg.content));
                 }
             }
-            
+
             if !is_first_user {
                 out.push_str(&format!("<s>[INST] {} [/INST]", prompt));
                 return out;
             }
-            
-            
+
             // Single turn (or fast-forward) fallback
             out.push_str(&format!("{} [/INST]", prompt));
-            
+
             out
         }
     } else {
         // Llama 3, 3.1, 3.2, 3.3, and 4
         |history, prompt| {
             let mut out = String::new();
-            
+
             let mut has_system = false;
             for msg in history {
-                if msg.role == "system" { has_system = true; }
-                out.push_str(&format!("<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>", role=msg.role, content=msg.content));
+                if msg.role == "system" {
+                    has_system = true;
+                }
+                out.push_str(&format!(
+                    "<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>",
+                    role = msg.role,
+                    content = msg.content
+                ));
             }
             if !has_system {
-                out.insert_str(0, "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI.<|eot_id|>");
+                out.insert_str(
+                    0,
+                    "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI.<|eot_id|>",
+                );
             }
-            
+
             out.push_str(&format!("<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n", prompt));
             out
         }
@@ -642,8 +652,8 @@ impl ModelWeights {
 
 #[cfg(test)]
 mod tests {
-    use candle_transformers::utils::build_causal_mask;
     use candle_core::{Device, Result};
+    use candle_transformers::utils::build_causal_mask;
 
     // ── Mask shape tests ──────────────────────────────────────────────────────
 

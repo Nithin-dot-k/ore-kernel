@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
@@ -6,7 +7,6 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::vec;
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 // Inter-process communication structures and utilities for ORE Agents
@@ -202,10 +202,13 @@ impl SemanticBus {
         self.embedding_cache
             .insert(hash, (Arc::clone(&arc_vector), timestamp));
 
-        let mut pipe = self.memory_pipes.entry(pipe_name.to_string()).or_insert_with(|| (is_persistent, VecDeque::new()));
-        
+        let mut pipe = self
+            .memory_pipes
+            .entry(pipe_name.to_string())
+            .or_insert_with(|| (is_persistent, VecDeque::new()));
+
         if is_persistent {
-            pipe.0 = true; 
+            pipe.0 = true;
         }
 
         pipe.1.push_back(arc_chunk);
@@ -215,23 +218,36 @@ impl SemanticBus {
         }
     }
 
-    pub fn write_cached_chunk(&self, pipe_name: &str, text: String, arc_vector: Arc<Vec<f32>>, source_app: &str, is_persistent: bool) {
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    pub fn write_cached_chunk(
+        &self,
+        pipe_name: &str,
+        text: String,
+        arc_vector: Arc<Vec<f32>>,
+        source_app: &str,
+        is_persistent: bool,
+    ) {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let arc_text = Arc::new(text);
-        
+
         let arc_chunk = Arc::new(MemoryChunk {
             text: arc_text,
-            vector: arc_vector, 
+            vector: arc_vector,
             source_app: source_app.to_string(),
             timestamp,
         });
 
         // We skip `self.embedding_cache.insert` because it's already in the cache
 
-        let mut pipe = self.memory_pipes.entry(pipe_name.to_string()).or_insert_with(|| (is_persistent, VecDeque::new()));
-        
+        let mut pipe = self
+            .memory_pipes
+            .entry(pipe_name.to_string())
+            .or_insert_with(|| (is_persistent, VecDeque::new()));
+
         if is_persistent {
-            pipe.0 = true; 
+            pipe.0 = true;
         }
 
         pipe.1.push_back(arc_chunk);
@@ -257,11 +273,11 @@ impl SemanticBus {
         top_k: usize,
         filter_app: Option<&str>,
     ) -> Vec<(f32, Arc<MemoryChunk>)> {
-
         // 1. PAGE FAULT (Safe because handler already verified manifest permissions)
         if !self.memory_pipes.contains_key(pipe_name) {
             if let Some(restored_pipe) = crate::swap::Pager::page_in_semantic(pipe_name) {
-                self.memory_pipes.insert(pipe_name.to_string(), (true, restored_pipe));
+                self.memory_pipes
+                    .insert(pipe_name.to_string(), (true, restored_pipe));
             }
         }
 
@@ -410,12 +426,14 @@ impl SemanticBus {
                 }
             }
 
-            self.memory_pipes.retain(|_, (_, chunks)| !chunks.is_empty());
+            self.memory_pipes
+                .retain(|_, (_, chunks)| !chunks.is_empty());
 
             if chunks_swept > 0 {
                 kprintln!(
                     "-> [KERNEL GC] Evicted {} persistent pipes to SSD. Swept {} stale ephemeral chunks.",
-                    chunks_swept, pipes_cleaned
+                    chunks_swept,
+                    pipes_cleaned
                 );
             }
         }

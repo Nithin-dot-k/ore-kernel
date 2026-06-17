@@ -50,17 +50,18 @@ impl GpuScheduler {
                 requested_model, app_id
             );
             state.active_users += 1;
-            
         } else if is_same_model && !is_same_agent {
             // [TIER 2] AGENT SWAP (The Massive Optimization)
-            let old_agent = state.active_app_id.clone().unwrap_or_else(|| "Unknown".to_string());
+            let old_agent = state
+                .active_app_id
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string());
             println!(
                 "-> [SCHEDULER] Agent Swap: Retaining '{}' weights. Evicting '{}' KV-Cache -> Injecting '{}'.",
                 requested_model, old_agent, app_id
             );
             state.active_app_id = Some(app_id.to_string());
             state.active_users = 1;
-            
         } else {
             // [TIER 3] MODEL SWAP (Cold Start)
             if let Some(old_model) = &state.active_model {

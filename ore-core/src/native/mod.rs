@@ -1,11 +1,11 @@
 pub mod engine;
 pub mod gguf_tokenizer;
-pub mod models;
 pub mod kv_manager;
+pub mod models;
 
 use crate::driver::{DriverError, InferenceDriver, LocalModel, VramProcess};
 use crate::swap::ContextMessage;
-use anyhow::{Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use candle_core::{DType, Device, Tensor};
 use engine::ActiveEngine;
@@ -44,7 +44,12 @@ impl NativeDriver {
         }
     }
 
-    fn load_weights_into_memory(model_name: &str, app_id: &str, stateful_paging: bool, device: &Device) -> Result<ActiveEngine> {
+    fn load_weights_into_memory(
+        model_name: &str,
+        app_id: &str,
+        stateful_paging: bool,
+        device: &Device,
+    ) -> Result<ActiveEngine> {
         ActiveEngine::load(model_name, app_id, stateful_paging, device)
     }
 }
@@ -77,13 +82,13 @@ impl InferenceDriver for NativeDriver {
         let mut state = self.engine.lock().unwrap();
         if state.is_none() || state.as_ref().unwrap().model_name != model {
             *state = Some(
-                // We assign the RAM to a dummy agent. The next real agent that 
+                // We assign the RAM to a dummy agent. The next real agent that
                 // runs will instantly "Agent Swap" and take ownership!
                 Self::load_weights_into_memory(
-                    &model, 
+                    &model,
                     "system_preloader", // Dummy App ID
                     false,              // No paging needed for a dummy
-                    &self.device
+                    &self.device,
                 )
                 .map_err(|e| DriverError::ExecutionFailed(e.to_string()))?,
             );
@@ -113,7 +118,7 @@ impl InferenceDriver for NativeDriver {
         // LAZY EVICTION CHECK (RAM -> SSD)
         {
             let mut state = self.engine.lock().unwrap();
-            
+
             let is_same_model = state.is_some() && state.as_ref().unwrap().model_name == model;
             let is_same_agent = state.is_some() && state.as_ref().unwrap().current_app_id == app_id;
 
@@ -124,14 +129,22 @@ impl InferenceDriver for NativeDriver {
             if (needs_model_reload && state.is_some()) || needs_agent_swap {
                 if let Some(active) = state.as_mut() {
                     if active.stateful_paging {
-                        println!("-> [NATIVE DRIVER] Lazy Eviction: Freezing Agent '{}' Brain State to SSD...", active.current_app_id);
+                        println!(
+                            "-> [NATIVE DRIVER] Lazy Eviction: Freezing Agent '{}' Brain State to SSD...",
+                            active.current_app_id
+                        );
                         let raw_cache = active.model.get_kv_cache();
-                        let flat_tensors = crate::native::kv_manager::KvManager::flatten_cache(&raw_cache);
+                        let flat_tensors =
+                            crate::native::kv_manager::KvManager::flatten_cache(&raw_cache);
                         let out_id = active.current_app_id.clone();
                         let out_model = active.model_name.clone();
-                        
+
                         eviction_task = Some(tokio::spawn(async move {
-                            crate::swap::Pager::page_out_kv_cache(&out_id, &out_model, &flat_tensors);
+                            crate::swap::Pager::page_out_kv_cache(
+                                &out_id,
+                                &out_model,
+                                &flat_tensors,
+                            );
                         }));
                     }
                 }
@@ -140,8 +153,10 @@ impl InferenceDriver for NativeDriver {
             // 2. APPLY THE NEW STATE
             if needs_model_reload {
                 // Drop the old model, Mmap the new weights from scratch
-                *state = Some(Self::load_weights_into_memory(&model, app_id, stateful_paging, &self.device)
-                    .map_err(|e| DriverError::ExecutionFailed(e.to_string()))?);
+                *state = Some(
+                    Self::load_weights_into_memory(&model, app_id, stateful_paging, &self.device)
+                        .map_err(|e| DriverError::ExecutionFailed(e.to_string()))?,
+                );
             } else if needs_agent_swap {
                 // BRAIN TRANSPLANT! Keep weights, just wipe the KV-Cache.
                 let active = state.as_mut().unwrap();
@@ -149,7 +164,9 @@ impl InferenceDriver for NativeDriver {
                 active.current_app_id = app_id.to_string();
                 active.stateful_paging = stateful_paging;
                 active.last_used = std::time::Instant::now();
-                println!("-> [NATIVE DRIVER] KV-Cache wiped for Agent Swap. Model weights retained in RAM.");
+                println!(
+                    "-> [NATIVE DRIVER] KV-Cache wiped for Agent Swap. Model weights retained in RAM."
+                );
             } else {
                 // Perfect Hit
                 if let Some(active) = state.as_mut() {
@@ -184,15 +201,13 @@ impl InferenceDriver for NativeDriver {
                 } else if let Some(frozen_tensors) = crate::swap::Pager::page_in_kv_cache(&a_id, &model, &device_clone) {
                     // Unflatten the SSD file back into 3D Neural Tensors
                     let cache = crate::native::kv_manager::KvManager::unflatten_cache(&frozen_tensors, active.model.num_layers());
-                    
                     // Inject directly into the Engine's brain!
                     active.model.set_kv_cache(cache);
                     current_cache_len = active.model.get_kv_cache_len(); 
-                    
                     kprintln!("-> [NATIVE DRIVER] KV-Cache injected ({} tokens). Bypassing Prefill.", current_cache_len);
                 } else {
                     kprintln!("-> [NATIVE DRIVER] No valid KV-Cache found. Rebuilding brain from JSON history.");
-                    active.model.clear_kv_cache();                    
+                    active.model.clear_kv_cache();                 
                 }
             } else {
                 // If paging is off, ensure we start with a clean brain!
@@ -429,15 +444,23 @@ impl InferenceDriver for NativeDriver {
             let mut state = self.engine.lock().unwrap();
             if let Some(active) = state.as_ref() {
                 if active.last_used.elapsed().as_secs() > idle_timeout_mins * 60 {
-                    println!("-> [NATIVE DRIVER] Idle Timeout ({} mins) reached for '{}'. Evicting from RAM...", idle_timeout_mins, active.current_app_id);
+                    println!(
+                        "-> [NATIVE DRIVER] Idle Timeout ({} mins) reached for '{}'. Evicting from RAM...",
+                        idle_timeout_mins, active.current_app_id
+                    );
                     if active.stateful_paging {
                         let raw_cache = active.model.get_kv_cache();
-                        let flat_tensors = crate::native::kv_manager::KvManager::flatten_cache(&raw_cache);
+                        let flat_tensors =
+                            crate::native::kv_manager::KvManager::flatten_cache(&raw_cache);
                         let out_id = active.current_app_id.clone();
                         let out_model = active.model_name.clone();
-                        
+
                         eviction_task = Some(tokio::spawn(async move {
-                            crate::swap::Pager::page_out_kv_cache(&out_id, &out_model, &flat_tensors);
+                            crate::swap::Pager::page_out_kv_cache(
+                                &out_id,
+                                &out_model,
+                                &flat_tensors,
+                            );
                         }));
                     }
                     *state = None; // Drop the engine entirely to free RAM/VRAM
@@ -452,17 +475,22 @@ impl InferenceDriver for NativeDriver {
 
     async fn invalidate_agent_cache(&self, app_id: &str) -> Result<(), DriverError> {
         let mut state = self.engine.lock().unwrap();
-        
+
         if let Some(active) = state.as_mut() {
             if active.current_app_id == app_id {
-                println!("-> [NATIVE DRIVER] Surgical Cache Invalidation: Wiping RAM KV-Cache for '{}'...", app_id);
+                println!(
+                    "-> [NATIVE DRIVER] Surgical Cache Invalidation: Wiping RAM KV-Cache for '{}'...",
+                    app_id
+                );
                 active.model.clear_kv_cache(); // Kill the Ghost!
-                
-                // We set the ID to something invalid so the next request is forced to do a Page-In 
+
+                // We set the ID to something invalid so the next request is forced to do a Page-In
                 // or Cold Start, rather than triggering a False "Shared Memory Hit"
-                active.current_app_id = "[INVALIDATED_COMPACTION]".to_string(); 
-                
-                println!("-> [NATIVE DRIVER] KV-Cache wiped. Model Weights safely retained in RAM.");
+                active.current_app_id = "[INVALIDATED_COMPACTION]".to_string();
+
+                println!(
+                    "-> [NATIVE DRIVER] KV-Cache wiped. Model Weights safely retained in RAM."
+                );
             }
         }
         Ok(())

@@ -9,7 +9,7 @@ macro_rules! kprintln {
         use std::io::Write;
         let stdout = std::io::stdout();
         let mut handle = stdout.lock();
-        
+
         // Tokio's Task ID implements Display natively! We print it directly.
         if let Some(task_id) = tokio::task::try_id() {
             let _ = write!(handle, "[{:<4} | Task:{:<3}] ", clean_thread, task_id);

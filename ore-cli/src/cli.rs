@@ -59,6 +59,10 @@ pub enum Commands {
         /// The ID of the agent (e.g., auto_coder)
         app_id: String,
     },
+    Compact {
+        /// The ID of the agent (e.g., auto_coder)
+        app_id: String,
+    },
     /// Wipes an Agent's frozen memory from the SSD
     Clear {
         /// The ID of the agent (e.g., openclaw)

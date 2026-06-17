@@ -1,11 +1,11 @@
 use crate::state::KernelState;
-use ore_core::kprintln; 
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
     middleware::Next,
     response::Response,
 };
+use ore_core::kprintln;
 use std::sync::Arc;
 
 pub async fn auth_middleware(

@@ -278,34 +278,42 @@ pub async fn run_manifest_wizard(app_id: &String, client: &Client) {
         toml_output.push_str(&format!("stateful_paging = {}\n\n", paging));
 
         if json_history == true {
-            println!("\n{} {}", ">>>".cyan(), "Configuring MEMORY LIMITS (Compaction)".bold());
-            
+            println!(
+                "\n{} {}",
+                ">>>".cyan(),
+                "Configuring MEMORY LIMITS (Compaction)".bold()
+            );
+
             let max_tokens: u32 = Input::with_theme(&SimpleTheme)
                 .with_prompt("Max Conversation Context (Tokens, e.g., 8192)")
                 .default(8192)
-                .interact_text().unwrap();
+                .interact_text()
+                .unwrap();
 
-            let max_kv_mb: u32;  
-            if paging == true { 
+            let max_kv_mb: u32;
+            if paging == true {
                 max_kv_mb = Input::with_theme(&SimpleTheme)
                     .with_prompt("Max Physical KV-Cache Size (MB, e.g., 1024 for 1GB)")
                     .default(1024)
-                    .interact_text().unwrap();
+                    .interact_text()
+                    .unwrap();
             } else {
                 max_kv_mb = 0;
             }
 
             let auto_sum = Confirm::with_theme(&SimpleTheme)
-                .with_prompt("Auto-summarize conversation when memory limits are hit? (Prevents amnesia)")
+                .with_prompt(
+                    "Auto-summarize conversation when memory limits are hit? (Prevents amnesia)",
+                )
                 .default(true)
-                .interact().unwrap();
+                .interact()
+                .unwrap();
 
             toml_output.push_str("[memory_limits]\n");
             toml_output.push_str(&format!("max_json_tokens = {}\n", max_tokens));
             toml_output.push_str(&format!("max_kv_cache_mb = {}\n", max_kv_mb));
             toml_output.push_str(&format!("auto_summarize_on_cap = {}\n\n", auto_sum));
         }
-
     }
 
     // --- 3. FILE SYSTEM ---
@@ -410,7 +418,8 @@ pub async fn run_manifest_wizard(app_id: &String, client: &Client) {
         let persistence = Confirm::with_theme(&SimpleTheme)
             .with_prompt("Enable Semantic Persistence (Flush Vector Pipes to NVMe SSD)?")
             .default(true)
-            .interact().unwrap();
+            .interact()
+            .unwrap();
 
         toml_output.push_str("[ipc]\n");
         toml_output.push_str(&format!(

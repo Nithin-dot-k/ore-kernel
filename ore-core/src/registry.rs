@@ -46,24 +46,26 @@ pub struct Resources {
     pub max_tokens_per_minute: u32,
     pub gpu_priority: String,
 
-    #[serde(default = "default_false")] 
-    pub json_history: bool,  
+    #[serde(default = "default_false")]
+    pub json_history: bool,
 
     #[serde(default)]
     pub stateful_paging: bool,
 }
 
-fn default_false() -> bool { false }
+fn default_false() -> bool {
+    false
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MemoryLimits {
     /// The maximum conversational context before the AI gets confused (e.g., 8192 tokens)
     /// We use a rough heuristic: 1 token ~= 4 characters of JSON text.
     pub max_json_tokens: u32,
-    
+
     /// The physical SSD/VRAM size limit for the frozen brain state (e.g., 1024 MB = 1 GB)
     pub max_kv_cache_mb: u32,
-    
+
     /// If either of the above limits are hit, should ORE summarize the history?
     pub auto_summarize_on_cap: bool,
 }
@@ -71,9 +73,9 @@ pub struct MemoryLimits {
 impl Default for MemoryLimits {
     fn default() -> Self {
         Self {
-            max_json_tokens: 8192, 
+            max_json_tokens: 8192,
             max_kv_cache_mb: 1024,
-            auto_summarize_on_cap: true,   
+            auto_summarize_on_cap: true,
         }
     }
 }
@@ -145,9 +147,12 @@ impl AppRegistry {
                 })?;
 
                 if let Err(e) = manifest.validate() {
-                    kprintln!("-> [SECURITY ALERT] Failed to load manifest for '{}'.", manifest.app_id);
+                    kprintln!(
+                        "-> [SECURITY ALERT] Failed to load manifest for '{}'.",
+                        manifest.app_id
+                    );
                     kprintln!("   KERNEL ERROR: {}", e);
-                    continue; 
+                    continue;
                 }
 
                 kprintln!("-> [REGISTRY] Verified & Loaded App: {}", manifest.app_id);
@@ -178,7 +183,10 @@ impl AppManifest {
 
         // RULE 2: Non-Zero Budgets
         if self.resources.max_tokens_per_minute == 0 {
-            return Err("FATAL: 'max_tokens_per_minute' cannot be 0. Agent would be permanently frozen.".to_string());
+            return Err(
+                "FATAL: 'max_tokens_per_minute' cannot be 0. Agent would be permanently frozen."
+                    .to_string(),
+            );
         }
 
         // if self.resources.json_history && self.memory_limits.max_json_tokens < 500 {

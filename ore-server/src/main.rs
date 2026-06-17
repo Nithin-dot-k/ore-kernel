@@ -17,10 +17,10 @@ use uuid::Uuid;
 use ore_core::driver::InferenceDriver;
 use ore_core::external::ollama::OllamaDriver;
 use ore_core::ipc::{MessageBus, RateLimiter, SemanticBus};
+use ore_core::kprintln;
 use ore_core::native::NativeDriver;
 use ore_core::registry::AppRegistry;
 use ore_core::scheduler::GpuScheduler;
-use ore_core::kprintln; 
 
 use crate::middleware::auth_middleware;
 use crate::state::{KernelState, OreConfig};
@@ -79,6 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/clear/:app_id", get(handlers::system::clear_memory))
         .route("/ask/:prompt", get(handlers::inference::ask_ai))
         .route("/run", post(handlers::inference::run_process))
+        .route("/compact/:app_id", get(handlers::system::compact_memory))
         .route("/ipc/share", post(handlers::ipc::sys_share_context))
         .route("/ipc/search", post(handlers::ipc::sys_search_context))
         .route("/ipc/send", post(handlers::ipc::ipc_send))
@@ -91,17 +92,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let gc_bus = shared_state.semantic_bus.clone();
     let gc_driver = shared_state.driver.clone();
-    
+
     // Background GC Loop
     tokio::spawn(async move {
         let mut tick_count = 0;
         loop {
             // Wake up every 1 minute
             tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-            
+
             // 1. Flush agents idle for > 5 minutes
-            let _ = gc_driver.flush_idle_memory(5).await; 
-            
+            let _ = gc_driver.flush_idle_memory(5).await;
+
             tick_count += 1;
             // 2. Run Semantic Bus GC every 60 minutes
             if tick_count >= 60 {

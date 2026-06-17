@@ -401,6 +401,24 @@ async fn main() {
         Commands::Manifest { app_id } => {
             interactive::run_manifest_wizard(app_id, client.as_ref().unwrap()).await;
         }
+        Commands::Compact { app_id } => {
+            println!(
+                "{} Instructing Kernel to compress memory for: {}",
+                "[*]".bright_blue(),
+                app_id.blue().bold()
+            );
+            println!("    (This will lock the GPU for a few seconds...)");
+
+            match client
+                .unwrap()
+                .get(format!("{}/compact/{}", kernel_url, app_id))
+                .send()
+                .await
+            {
+                Ok(response) => println!("\n{}", response.text().await.unwrap_or_default().green()),
+                Err(_) => println!("{} ORE Kernel is offline.", "[-]".red()),
+            }
+        }
         Commands::Clear { app_id } => {
             println!(
                 "{} Instructing Kernel to wipe memory for: {}",

@@ -1,6 +1,6 @@
 use crate::state::KernelState;
-use ore_core::kprintln; 
 use axum::extract::{Path, State};
+use ore_core::kprintln;
 use ore_core::swap::Pager;
 use std::sync::Arc;
 
@@ -201,6 +201,93 @@ pub async fn list_manifests(State(state): State<Arc<KernelState>>) -> String {
         }
     }
     output
+}
+
+pub async fn compact_memory(
+    State(state): State<Arc<KernelState>>,
+    Path(app_id): Path<String>,
+) -> String {
+    println!(
+        "-> [KERNEL COMMAND] Manual Memory Compaction triggered for Agent '{}'",
+        app_id
+    );
+
+    let manifest = match state.registry.get_app(&app_id) {
+        Some(m) => m.clone(),
+        None => return format!("KERNEL ERROR: Unregistered Agent '{}'.", app_id),
+    };
+
+    if !manifest.resources.json_history {
+        return format!(
+            "KERNEL ERROR: Agent '{}' does not use JSON history. Cannot compact.",
+            app_id
+        );
+    }
+
+    let history = Pager::page_in_history(&app_id);
+    if history.len() <= 2 {
+        return "SUCCESS: History is already too short to compact.".to_string();
+    }
+
+    let target_model = manifest
+        .resources
+        .allowed_models
+        .first()
+        .map(|s| s.as_str())
+        .unwrap_or("llama3.2:1b");
+    let lease = state.scheduler.request_gpu(target_model, &app_id).await;
+
+    let text_to_summarize = history
+        .iter()
+        .map(|m| format!("{}: {}", m.role, m.content))
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    let summary_prompt = format!(
+        "You are a system memory compressor. Condense the following conversation log into an ultra-short, dense summary. Keep ALL names, numbers, decisions, and strict facts. Discard all conversational filler. Output ONLY the raw facts in as few words as mathematically possible.\n\nRAW LOG:\n{}\n\nCOMPRESSED FACTS:", 
+        text_to_summarize
+    );
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let driver_clone = Arc::clone(&state.driver);
+    let m_clone = target_model.to_string();
+    let a_clone = app_id.clone();
+
+    // Spawn the generation task
+    tokio::spawn(async move {
+        let _ = driver_clone
+            .generate_text(&m_clone, &a_clone, false, &summary_prompt, None, tx)
+            .await;
+    });
+
+    let mut summary = String::new();
+    while let Some(word) = rx.recv().await {
+        summary.push_str(&word);
+    }
+
+    drop(lease); // Release GPU
+
+    let mut compacted_history = Vec::new();
+    compacted_history.push(ore_core::swap::ContextMessage {
+        role: "system".to_string(),
+        content: format!(
+            "You are a helpful AI assistant. Previous context summary:\n{}",
+            summary.trim()
+        ),
+    });
+
+    let len = history.len();
+    compacted_history.push(history[len - 2].clone());
+    compacted_history.push(history[len - 1].clone());
+
+    // Overwrite the SSD files
+    Pager::page_out_history(&app_id, &compacted_history);
+
+    if manifest.resources.stateful_paging {
+        Pager::delete_kv_cache(&app_id);
+    }
+
+    format!("SUCCESS: Memory for Agent '{}' manually compacted.", app_id)
 }
 
 pub async fn clear_memory(Path(app_id): Path<String>) -> String {

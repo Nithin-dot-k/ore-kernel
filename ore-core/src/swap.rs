@@ -1,10 +1,10 @@
 use crate::ipc::MemoryChunk;
-use serde::{Deserialize, Serialize};
 use candle_core::{Device, Tensor};
-use std::collections::{VecDeque, HashMap};
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 // This works across ALL models (Llama, Qwen, Mistral).
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -57,7 +57,10 @@ impl Pager {
         // Bincode freezes the RAM structure into pure 1s and 0s instantly
         if let Ok(data) = bincode::serialize(chunks) {
             let _ = fs::write(&path, data);
-            kprintln!("-> [PAGER] Semantic Pipe '{}' flushed to SSD (.pipe).", pipe_name);
+            kprintln!(
+                "-> [PAGER] Semantic Pipe '{}' flushed to SSD (.pipe).",
+                pipe_name
+            );
         }
     }
 
@@ -68,10 +71,16 @@ impl Pager {
             // Read raw bytes instead of strings
             if let Ok(data) = fs::read(&path) {
                 if let Ok(chunks) = bincode::deserialize::<VecDeque<Arc<MemoryChunk>>>(&data) {
-                    kprintln!("-> [PAGER] Semantic Pipe '{}' mapped IN from SSD.", pipe_name);
+                    kprintln!(
+                        "-> [PAGER] Semantic Pipe '{}' mapped IN from SSD.",
+                        pipe_name
+                    );
                     return Some(chunks);
                 } else {
-                    kprintln!("-> [PAGER] [ERROR] Failed to deserialize pipe '{}'. The binary file might be corrupt or from an older version.", pipe_name);
+                    kprintln!(
+                        "-> [PAGER] [ERROR] Failed to deserialize pipe '{}'. The binary file might be corrupt or from an older version.",
+                        pipe_name
+                    );
                 }
             }
         }
@@ -82,16 +91,24 @@ impl Pager {
         Self::ensure_swap_drive();
         let safe_model = model_name.replace(":", "-");
         let path = format!("{}/{}_{}.safetensors", Self::SWAP_DIR, app_id, safe_model);
-        
+
         // Save the raw math matrices directly to the SSD
         if let Err(e) = candle_core::safetensors::save(tensors, &path) {
             kprintln!("-> [PAGER] [ERROR] Failed to save KV-Cache to SSD: {}", e);
         } else {
-            kprintln!("-> [PAGER] Agent '{}' KV-Cache ({} Tensors) paged OUT to SSD.", app_id, tensors.len());
+            kprintln!(
+                "-> [PAGER] Agent '{}' KV-Cache ({} Tensors) paged OUT to SSD.",
+                app_id,
+                tensors.len()
+            );
         }
     }
 
-    pub fn page_in_kv_cache(app_id: &str, model_name: &str, device: &Device) -> Option<HashMap<String, Tensor>> {
+    pub fn page_in_kv_cache(
+        app_id: &str,
+        model_name: &str,
+        device: &Device,
+    ) -> Option<HashMap<String, Tensor>> {
         let safe_model = model_name.replace(":", "-");
         let path = format!("{}/{}_{}.safetensors", Self::SWAP_DIR, app_id, safe_model);
 
@@ -102,7 +119,10 @@ impl Pager {
                     return Some(tensors);
                 }
                 Err(e) => {
-                    kprintln!("-> [PAGER] [WARN] Failed to load KV-Cache: {}. Falling back to JSON History.", e);
+                    kprintln!(
+                        "-> [PAGER] [WARN] Failed to load KV-Cache: {}. Falling back to JSON History.",
+                        e
+                    );
                 }
             }
         }
@@ -129,22 +149,32 @@ impl Pager {
         if let Ok(entries) = fs::read_dir(Self::SWAP_DIR) {
             for entry in entries.flatten() {
                 let file_name = entry.file_name().to_string_lossy().to_string();
-                if file_name.starts_with(&format!("{}_", app_id)) && file_name.ends_with(".safetensors") {
+                if file_name.starts_with(&format!("{}_", app_id))
+                    && file_name.ends_with(".safetensors")
+                {
                     let _ = fs::remove_file(entry.path());
                 }
             }
         }
-        
-        kprintln!("-> [PAGER] Completely wiped all swap files for Agent '{}'", app_id);
+
+        kprintln!(
+            "-> [PAGER] Completely wiped all swap files for Agent '{}'",
+            app_id
+        );
     }
 
     pub fn delete_kv_cache(app_id: &str) {
         if let Ok(entries) = fs::read_dir(Self::SWAP_DIR) {
             for entry in entries.flatten() {
                 let file_name = entry.file_name().to_string_lossy().to_string();
-                if file_name.starts_with(&format!("{}_", app_id)) && file_name.ends_with(".safetensors") {
+                if file_name.starts_with(&format!("{}_", app_id))
+                    && file_name.ends_with(".safetensors")
+                {
                     let _ = fs::remove_file(entry.path());
-                    kprintln!("-> [PAGER] Deleted stale KV-Cache for '{}' (Memory Compaction).", app_id);
+                    kprintln!(
+                        "-> [PAGER] Deleted stale KV-Cache for '{}' (Memory Compaction).",
+                        app_id
+                    );
                 }
             }
         }

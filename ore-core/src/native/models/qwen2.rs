@@ -14,14 +14,14 @@
 //!
 
 use crate::native::engine::{ModelConfig, OreEngine};
+use crate::native::models::qwen2::ModelWeights as Qwen2Model;
 use crate::swap::ContextMessage;
-use candle_transformers::{quantized_nn::RmsNorm, utils::repeat_kv};
-use candle_nn::{Embedding, Module};
 use candle_core::{
-    quantized::{gguf_file, QMatMul},
     DType, Device, IndexOp, Result, Tensor,
+    quantized::{QMatMul, gguf_file},
 };
-use  crate::native::models::qwen2::ModelWeights as Qwen2Model;
+use candle_nn::{Embedding, Module};
+use candle_transformers::{quantized_nn::RmsNorm, utils::repeat_kv};
 use std::collections::HashMap;
 use std::io::{Read, Seek};
 use tokenizers::Tokenizer;
@@ -49,7 +49,9 @@ pub fn load<R: Read + Seek>(
         // base model formatter (no special tokens, just pass through)
         |history, prompt| {
             let mut out = String::new();
-            for msg in history { out.push_str(&format!("{}: {}\n", msg.role, msg.content)); }
+            for msg in history {
+                out.push_str(&format!("{}: {}\n", msg.role, msg.content));
+            }
             out.push_str(&format!("user: {}\n", prompt));
             out
         }
@@ -59,15 +61,26 @@ pub fn load<R: Read + Seek>(
 
             let mut has_system = false;
             for msg in history {
-                if msg.role == "system" { has_system = true; }
-                out.push_str(&format!("<|im_start|>{}\n{}<|im_end|>\n", msg.role, msg.content));    
+                if msg.role == "system" {
+                    has_system = true;
+                }
+                out.push_str(&format!(
+                    "<|im_start|>{}\n{}<|im_end|>\n",
+                    msg.role, msg.content
+                ));
             }
             if !has_system {
-                out.insert_str(0, "<|im_start|>system\nYou are a helpful AI assistant.<|im_end|>\n");
+                out.insert_str(
+                    0,
+                    "<|im_start|>system\nYou are a helpful AI assistant.<|im_end|>\n",
+                );
             }
 
-            out.push_str(&format!("<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", prompt));
-            
+            out.push_str(&format!(
+                "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+                prompt
+            ));
+
             out
         }
     };

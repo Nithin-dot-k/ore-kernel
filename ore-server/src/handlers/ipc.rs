@@ -7,8 +7,8 @@ use axum::{
     response::{IntoResponse, Json as JsonResponse},
 };
 use ore_core::ipc::{AgentMessage, SemanticBus};
+use ore_core::kprintln;
 use ore_core::swap::Pager;
-use ore_core::kprintln; 
 use std::sync::Arc;
 
 pub async fn sys_share_context(
@@ -36,7 +36,8 @@ pub async fn sys_share_context(
     {
         kprintln!(
             "-> [BLOCKED] Agent '{}' tried to write to restricted pipe '{}'.",
-            payload.source_app, payload.target_pipe
+            payload.source_app,
+            payload.target_pipe
         );
         return format!(
             "KERNEL ALERT: Permission Denied. Add '{}' to allowed_semantic_pipes in manifest.",
@@ -46,7 +47,8 @@ pub async fn sys_share_context(
 
     kprintln!(
         "-> [SEMANTIC BUS] Verified Agent '{}' is uploading data to pipe '{}'",
-        manifest.app_id, payload.target_pipe
+        manifest.app_id,
+        payload.target_pipe
     );
 
     // Dynamic Chunking Algorithm
@@ -145,7 +147,7 @@ pub async fn sys_share_context(
 
     if manifest.ipc.semantic_persistence {
         let p_name = payload.target_pipe.clone();
-        
+
         // Grab the updated pipe from RAM
         if let Some(pipe_contents) = state.semantic_bus.get_pipe_contents(&p_name) {
             // Spawn a background thread to freeze it to the SSD without blocking the API!
@@ -188,7 +190,8 @@ pub async fn sys_search_context(
     {
         kprintln!(
             "-> [BLOCKED] Agent '{}' tried to read restricted pipe '{}'.",
-            payload.source_app, payload.target_pipe
+            payload.source_app,
+            payload.target_pipe
         );
         return (
             StatusCode::FORBIDDEN,
@@ -202,7 +205,8 @@ pub async fn sys_search_context(
 
     kprintln!(
         "-> [SEMANTIC BUS] Verified Agent '{}' searching pipe '{}'",
-        manifest.app_id, payload.target_pipe
+        manifest.app_id,
+        payload.target_pipe
     );
 
     // 3. GENERATE EMBEDDINGS
@@ -279,7 +283,8 @@ pub async fn ipc_send(
 ) -> String {
     kprintln!(
         "-> [IPC BUS] Routing message from '{}' to '{}'",
-        payload.from_app, payload.to_app
+        payload.from_app,
+        payload.to_app
     );
 
     // ore ipc firewall
@@ -290,7 +295,8 @@ pub async fn ipc_send(
     if !manifest.ipc.allowed_agent_targets.contains(&payload.to_app) {
         kprintln!(
             "-> [BLOCKED] '{}' is not authorized by its manifest to contact '{}'.",
-            payload.from_app, payload.to_app
+            payload.from_app,
+            payload.to_app
         );
         return format!(
             "KERNEL ALERT: IPC Target '{}' not in allowed_agent_targets manifest.",

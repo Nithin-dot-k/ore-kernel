@@ -1,16 +1,16 @@
-use anyhow::{Error as E, Result};
 use crate::native::gguf_tokenizer::TokenizerFromGguf;
 use crate::native::models;
-use crate::swap::ContextMessage;
-use std::path::Path;
-use std::fs::File;
-use std::io::Cursor;
-use memmap2::Mmap;
-use candle_core::{Tensor, Device};
-use candle_core::quantized::gguf_file;
-use candle_transformers::generation::LogitsProcessor;
 use crate::native::models::llama::ModelWeights as LlamaModel;
 use crate::native::models::qwen2::ModelWeights as Qwen2Model;
+use crate::swap::ContextMessage;
+use anyhow::{Error as E, Result};
+use candle_core::quantized::gguf_file;
+use candle_core::{Device, Tensor};
+use candle_transformers::generation::LogitsProcessor;
+use memmap2::Mmap;
+use std::fs::File;
+use std::io::Cursor;
+use std::path::Path;
 use tokenizers::Tokenizer;
 
 // Supports multiple architectures
@@ -104,7 +104,7 @@ impl OreEngine {
         };
 
         if let Some((k, _v)) = first_layer_cache {
-            k.dim(2).unwrap_or(0) 
+            k.dim(2).unwrap_or(0)
         } else {
             0
         }
@@ -139,7 +139,7 @@ impl OreEngine {
 pub struct ModelConfig {
     pub architecture: String,
     pub stop_tokens: Vec<u32>,
-    pub formatter: fn(&[ContextMessage], &str) -> String, 
+    pub formatter: fn(&[ContextMessage], &str) -> String,
 }
 
 pub struct ActiveEngine {
@@ -148,15 +148,20 @@ pub struct ActiveEngine {
     pub logits_processor: LogitsProcessor,
     pub model_name: String,
     pub config: ModelConfig,
-    pub current_app_id: String,     
-    pub stateful_paging: bool,      
+    pub current_app_id: String,
+    pub stateful_paging: bool,
     pub last_used: std::time::Instant,
     pub _mmap: memmap2::Mmap,
 }
 
 impl ActiveEngine {
     /// The ultra-fast, zero-copy GGUF loader using OS-level memory mapping (mmap)
-    pub fn load(model_name: &str, app_id: &str, stateful_paging: bool, device: &Device) -> Result<Self> {
+    pub fn load(
+        model_name: &str,
+        app_id: &str,
+        stateful_paging: bool,
+        device: &Device,
+    ) -> Result<Self> {
         let safe_folder_name = model_name.replace(":", "-");
         let model_dir = Path::new("../models").join(&safe_folder_name);
         let gguf_path = model_dir.join("model.gguf");
@@ -168,7 +173,7 @@ impl ActiveEngine {
                 model_name
             )));
         }
-        
+
         // 1. Memory Map the Weights
         kprintln!("-> [CANDLE] Allocating Virtual Memory Pointer via mmap...");
         let file = File::open(&gguf_path)?;
@@ -213,7 +218,7 @@ impl ActiveEngine {
         };
 
         let global_path = format!("../tokenizers/{}.json", global_tokenizer_name);
-        
+
         // universal tokenizer fallback
         let tokenizer = if Path::new(&local_tokenizer_path).exists() {
             kprintln!("-> [CANDLE] Using Local Dictionary...");
@@ -251,9 +256,18 @@ impl ActiveEngine {
 
         // 4. Load Neural Weights (Architecture Router)
         let (model, config) = match arch_name.as_str() {
-            "llama" => models::llama::load(model_name, model_content, &mut cursor, device, &tokenizer)?,
-            "qwen2" => models::qwen2::load(model_name, model_content, &mut cursor, device, &tokenizer)?,
-            _ => return Err(E::msg(format!("Architecture not supported natively: {}", arch_name))),
+            "llama" => {
+                models::llama::load(model_name, model_content, &mut cursor, device, &tokenizer)?
+            }
+            "qwen2" => {
+                models::qwen2::load(model_name, model_content, &mut cursor, device, &tokenizer)?
+            }
+            _ => {
+                return Err(E::msg(format!(
+                    "Architecture not supported natively: {}",
+                    arch_name
+                )));
+            }
         };
 
         let logits_processor = LogitsProcessor::new(299792458, Some(0.7), None);
