@@ -114,7 +114,7 @@ A dedicated scheduling module built on `tokio::sync::Semaphore` with RAII-based 
 A bare-metal inference engine powered by Hugging Face's [Candle](https://github.com/huggingface/candle) framework:
 - **GGUF Model Loading** - Reads quantized `.gguf` weight files directly from disk with architecture auto-detection.
 - **Multi-Architecture Support** - Routes inference through architecture-specific model loaders (`Llama`, `Qwen2`) via the `OreEngine` enum.
-- **3-Tier Tokenizer Resolution** - Searches for a local model-specific tokenizer → falls back to the global `tokenizers/` directory → extracts directly from GGUF metadata as a last resort (JIT-cached to disk for future loads).
+- **2-Tier Tokenizer Resolution** - Searches for a local model-specific tokenizer (`tokenizer.json`) → extracts directly from GGUF metadata as a fallback (JIT-cached to disk for future loads).
 - **Hardware Auto-Detection** - Probes for CUDA, Metal, and CPU at boot and selects the optimal compute device.
 - **Streaming Token Generation** - Generates tokens one-at-a-time via `tokio::sync::mpsc`, enabling real-time streaming to the CLI.
 - **Native System Embedders** - A built-in `SystemEmbedder` (`ore-core/src/native/models/bert.rs` and `nomic.rs`) that loads architectures like BERT and Nomic v1.5 from Safetensors for embedding generation. Implements masked mean pooling and L2 normalization entirely in Rust. The embedder is serialized via a strict `embedder_lock` mutex to prevent multi-agent OOM crashes. When the embedding thread completes, Rust's ownership model automatically drops the model and frees all RAM to 0MB idle.
@@ -131,7 +131,7 @@ An OS-style page file system for agent conversation context and AI memory state:
 A `DashMap`-backed per-agent token counter that enforces the `max_tokens_per_minute` quota declared in each app's manifest. The counter auto-resets every 60 seconds. Agents that exceed their quota are blocked before reaching the GPU.
 
 **Hardware Abstraction Layer** (`ore-core/src/driver.rs` + `ore-core/src/external/`)
-A trait-based driver system (`InferenceDriver`) that decouples application logic from the physical inference engine. The HAL trait defines 9 core operations (`engine_name`, `is_online`, `get_running_models`, `generate_text`, `generate_embeddings`, `unload_model`, `preload_model`, `pull_model`, `list_local_models`). Two implementations ship today:
+A trait-based driver system (`InferenceDriver`) that decouples application logic from the physical inference engine. The HAL trait defines 11 core operations (`engine_name`, `is_online`, `get_running_models`, `generate_text`, `generate_embeddings`, `unload_model`, `preload_model`, `pull_model`, `list_local_models`, `flush_idle_memory`, `invalidate_agent_cache`). Two implementations ship today:
 - **`OllamaDriver`** (`ore-core/src/external/ollama.rs`) - HTTP proxy to Ollama with health checks, model listing, VRAM process monitoring, inference generation, model lifecycle management, and embedding generation via `/api/embed`.
 - **`NativeDriver`** (`ore-core/src/native/mod.rs`) - Pure-Rust Candle-based inference with GGUF model loading, streaming generation, hardware auto-detection, and native BERT embeddings via Safetensors.
 
@@ -272,7 +272,6 @@ ore-system/
 │   ├── web_tool.toml
 │   └── web_toolkit.toml
 ├── models/                  # Downloaded model weights (per-model directories)
-├── tokenizers/              # Global tokenizer JSONs (Llama 2/3.2/3.3/4, CodeLlama)
 ├── swap/                    # SSD page files for agent context persistence
 ├── ore.toml                 # System configuration (engine + memory GC settings)
 ├── rust-toolchain.toml      # Pinned Rust version (1.93.0)

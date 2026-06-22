@@ -60,6 +60,12 @@ pub trait InferenceDriver: Send + Sync {
         model: &str,
         inputs: Vec<String>,
     ) -> Result<Vec<Vec<f32>>, DriverError>;
+
+    /// Drop the engine from RAM if it has been idle longer than the timeout
+    async fn flush_idle_memory(&self, idle_timeout_mins: u64) -> Result<(), DriverError>;
+
+    /// Wipe a specific agent's KV-Cache from RAM (Memory Compaction)
+    async fn invalidate_agent_cache(&self, app_id: &str) -> Result<(), DriverError>;
 }
 ```
 
@@ -171,7 +177,7 @@ Pure-Rust inference using Candle. See [Native Candle Engine](./native-candle-eng
 See [Extending ORE → Adding a New Inference Driver](../extending-ore.md#1-adding-a-new-inference-driver) for a step-by-step guide.
 
 Key requirements:
-1. Implement all 9 trait methods
+1. Implement all 11 trait methods
 2. Stream tokens through the `UnboundedSender<String>` channel
 3. Use `DriverError` for all error reporting
 4. Register the module and wire it into the boot sequence

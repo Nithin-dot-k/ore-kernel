@@ -61,7 +61,7 @@ Each variant wraps the architecture-specific model loader and implements a commo
 
 ---
 
-## Tokenizer Resolution (3-Tier)
+## Tokenizer Resolution (2-Tier)
 
 Finding the right tokenizer is surprisingly hard. The engine uses a cascading resolution strategy:
 
@@ -70,16 +70,12 @@ Tier 1: Model-specific tokenizer
         models/<model>/tokenizer.json
         ↓ (not found?)
 
-Tier 2: Global tokenizer directory
-        tokenizers/<family>.json
-        ↓ (not found?)
-
-Tier 3: Extract from GGUF metadata
+Tier 2: Extract from GGUF metadata
         Read tokenizer data from .gguf file
         JIT-cache to disk for future loads
 ```
 
-### Tier 3: GGUF Metadata Extraction
+### Tier 2: GGUF Metadata Extraction
 
 Source: [`ore-core/src/native/gguf_tokenizer.rs`](../../ore-core/src/native/gguf_tokenizer.rs)
 
