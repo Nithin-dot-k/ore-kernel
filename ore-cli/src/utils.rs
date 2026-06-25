@@ -7,6 +7,7 @@ use reqwest::{
 };
 use serde::Deserialize;
 use std::{cmp::min, fs, io::Write, path::Path, process::exit};
+use inquire::ui::{Color, RenderConfig, StyleSheet, Styled};
 
 #[derive(Deserialize)]
 pub struct OreConfig {
@@ -16,6 +17,105 @@ pub struct OreConfig {
 #[derive(Deserialize)]
 pub struct SystemConfig {
     engine: String,
+}
+
+pub fn get_ore_dir() -> String {
+    std::env::var("ORE_DIR").unwrap_or_else(|_| "..".to_string())
+}
+
+fn visible_len(text: &str) -> usize {
+    let mut len = 0;
+    let mut in_ansi = false;
+    for c in text.chars() {
+        if c == '\x1B' {
+            in_ansi = true;
+        } else if in_ansi {
+            // ANSI escape sequences typically end with an alphabetic character (like 'm' for colors)
+            if c.is_ascii_alphabetic() {
+                in_ansi = false;
+            }
+        } else {
+            len += 1;
+        }
+    }
+    len
+}
+
+/// Generates the premium Hermes/Claude-style TUI theme
+pub fn get_ore_theme() -> RenderConfig<'static> {
+    let mut render_config = RenderConfig::default();
+    
+    // Prompts: ? (Yellow) and ✔ (Green)
+    render_config.prompt_prefix = Styled::new("?").with_fg(Color::LightYellow);
+    render_config.answered_prompt_prefix = Styled::new("✔").with_fg(Color::LightGreen);
+    
+    // Dim help text
+    render_config.help_message = StyleSheet::new().with_fg(Color::DarkGrey);
+    
+    // User answers in Cyan
+    render_config.answer = StyleSheet::new().with_fg(Color::LightCyan);
+    
+    // Multi-select checkboxes
+    render_config.selected_checkbox = Styled::new("[x]").with_fg(Color::LightGreen);
+    render_config.unselected_checkbox = Styled::new("[ ]").with_fg(Color::DarkGrey);
+    
+    // The "❯" pointer for lists (Fix for the compiler error)
+    render_config.highlighted_option_prefix = Styled::new(">").with_fg(Color::LightCyan);
+    
+    // (Optional) Style the text of the selected option itself
+    render_config.selected_option = Some(StyleSheet::new().with_fg(Color::LightCyan));
+    
+    render_config
+}
+
+/// Prints a sleek unicode border box
+pub fn print_panel(title: &str, subtitle: &str) {
+    println!();
+    let width: usize = 65; // Fixed terminal width for the boxes
+    
+    // Top border
+    let top_filler = "─".repeat(width.saturating_sub(title.len() + 5));
+    println!("{} {} {}{}", 
+        "╭─".bright_black(), 
+        title.bold(), 
+        top_filler.bright_black(), 
+        "╮".bright_black()
+    );
+    
+    // Middle section (centered subtitle)
+    if !subtitle.is_empty() {
+        let sub_len = visible_len(subtitle);
+        let available_space = width.saturating_sub(2); // Space inside the borders
+        
+        let total_padding = available_space.saturating_sub(sub_len);
+        let left_pad = " ".repeat(total_padding / 2);
+        let right_pad = " ".repeat(total_padding - (total_padding / 2)); // Catches odd numbers
+        
+        println!("{}{}{}{}{}", 
+            "│".bright_black(), 
+            left_pad,
+            subtitle.bright_black(), 
+            right_pad, 
+            "│".bright_black()
+        );
+    }
+    
+    // Bottom border
+    let bottom_filler = "─".repeat(width - 2);
+    println!("{}{}{}", 
+        "╰".bright_black(), 
+        bottom_filler.bright_black(), 
+        "╯".bright_black()
+    );
+    println!();
+}
+
+/// Prints a section divider that aligns perfectly with the panel width
+pub fn print_section_divider(num: &str, title: &str) {
+    let width: usize = 65;
+    let filler_len = width.saturating_sub(title.len() + num.len() + 7);
+    let filler = "─".repeat(filler_len);
+    println!("\n{}", format!("─── {}. {} {}", num, title, filler).bright_black());
 }
 
 pub fn get_system_engine() -> String {
