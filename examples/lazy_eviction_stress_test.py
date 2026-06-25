@@ -41,8 +41,8 @@ def main():
     print("  ORE KERNEL :: HIGH-STRESS LAZY EVICTION TEST")
     print("==================================================\n")
     print("  To see the true power of your OS, run this script twice:")
-    print("  Run 1: stateful_paging = false (in openclaw.toml)")
-    print("  Run 2: stateful_paging = true  (in openclaw.toml)")
+    print("  Run 1: stateful_paging = true  (in openclaw.toml and terminal_user.toml)")
+    print("  Run 2: stateful_paging = false  (in openclaw.toml and terminal_user.toml)")
     print("==================================================\n")
 
     # 1. WIPE THE SLATE CLEAN
