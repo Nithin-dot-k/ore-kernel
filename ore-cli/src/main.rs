@@ -22,7 +22,7 @@ struct RunPayload {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    let kernel_url = "http://127.0.0.1:3000";
+    let kernel_url = "http://127.0.0.1:6767";
 
     let client = if !matches!(cli.command, Commands::Init) {
         Some(build_secure_client())
@@ -323,77 +323,142 @@ async fn main() {
             }
         }
         Commands::Run { model, prompt } => {
-            println!(
-                "{} Routing task to {}...",
-                "[*]".bright_blue(),
-                model.blue().bold()
-            );
+            if let Some(p) = prompt {
+                println!(
+                    "{} Routing task to {}...",
+                    "[*]".bright_blue(),
+                    model.blue().bold()
+                );
 
-            let payload = RunPayload {
-                model: model.clone(),
-                prompt: prompt.clone(),
-            };
+                let payload = RunPayload {
+                    model: model.clone(),
+                    prompt: p.clone(),
+                };
 
-            match client
-                .unwrap()
-                .post(format!("{}/run", kernel_url))
-                .json(&payload)
-                .send()
-                .await
-            {
-                Ok(response) => {
-                    if response.status().is_success() {
+                let res =  client
+                    .unwrap()
+                    .post(format!("{}/run", kernel_url))
+                    .json(&payload)
+                    .send()
+                    .await
+                    .unwrap();
+                
+                println!();
+                let mut stream = res.bytes_stream();
+                while let Some(chunk) = stream.next().await {
+                    if let Ok(bytes) = chunk {
+                        let text = String::from_utf8_lossy(&bytes);
+                        if text.starts_with("ORE KERNEL ALERT") { print!("{}", text.red().bold()); } 
+                        else { print!("{}", text); } // Standard terminal color for easy reading!
                         use std::io::Write;
-                        println!();
-
-                        let mut stream = response.bytes_stream();
-
-                        let mut is_thinking = false;
-
-                        while let Some(chunk) = stream.next().await {
-                            if let Ok(bytes) = chunk {
-                                let text = String::from_utf8_lossy(&bytes).to_string();
-                                if text.starts_with("ORE KERNEL ALERT") {
-                                    print!("{}", text.red().bold());
-                                    continue;
-                                } 
-                                
-                                // Check for Thinking Tags - Thinking machine handling internal monologue vs final answer rendering
-                                if text.contains("<think>") {
-                                    is_thinking = true;
-                                    print!("\n{} ", "[Thinking...]".bright_black().italic());
-                                    let clean = text.replace("<think>", "");
-                                    print!("{}", clean.bright_black().italic());
-                                    std::io::stdout().flush().unwrap();
-                                    continue;
-                                }
-
-                                if text.contains("</think>") {
-                                    is_thinking = false;
-                                    let clean = text.replace("</think>", "");
-                                    print!("{}", clean.bright_black().italic());
-                                    print!("\n\n{} ", "[Answer]".blue().bold());
-                                    std::io::stdout().flush().unwrap();
-                                    continue;
-                                }
-
-                                // Render the text based on the current state
-                                if is_thinking {
-                                    // Dim gray and italic for the internal monologue
-                                    print!("{}", text.bright_black().italic());
-                                } else {
-                                    // Bright blue for the final answer
-                                    print!("{}", text.blue());
-                                }
-                                std::io::stdout().flush().unwrap();
-                            }
-                        }
-                        println!("\n");
-                    } else {
-                        println!("{} Kernel Error: {}", "[-]".red(), response.status());
+                        std::io::stdout().flush().unwrap();
                     }
                 }
-                Err(_) => println!("{} ORE Kernel is offline.", "[-]".red()),
+                println!("\n");
+            } else {
+                println!("\n{}", "╭──────────────────────────────────────────╮".bright_black());
+                println!("{}  {}                             {}", "│".bright_black(), "ORE SESSION", "│".bright_black());
+                println!("{}  Model: {:<32} {}", "│".bright_black(), model.yellow(), "│".bright_black());
+                println!("{}  Type '/e' or '/exit' to disconnect      {}", "│".bright_black(), "│".bright_black());
+                println!("{}", "╰──────────────────────────────────────────╯\n".bright_black());
+
+                let c = client.unwrap();
+
+                let render_config = inquire::ui::RenderConfig::default()
+                    .with_prompt_prefix(inquire::ui::Styled::new(""))
+                    .with_answered_prompt_prefix(inquire::ui::Styled::new(""))
+                    .with_text_input(inquire::ui::StyleSheet::new())
+                    .with_answer(inquire::ui::StyleSheet::new());
+
+                loop {
+                    use std::io::{self, Write};
+
+                    // --- USER TURN ---
+                    let prompt_text = format!("{}", ">>>".bright_black().bold());
+                    let input_result = inquire::Text::new(&prompt_text)
+                        .with_placeholder(" Send a message...")
+                        .with_render_config(render_config.clone())
+                        .prompt();
+
+                    let trimmed = match input_result {
+                        Ok(input) => input.trim().to_string(),
+                        Err(_) => {
+                            // This cleanly catches Ctrl+C or Escape keys!
+                            println!("\n Session disconnected.");
+                            break;
+                        }
+                    };
+
+                    if trimmed == "/e" || trimmed == "/exit" {
+                        println!("\n Session disconnected.");
+                        break;
+                    }
+
+                    if trimmed.is_empty() { 
+                        // Move cursor back up if they just hit enter blindly
+                        print!("\x1B[1A\x1B[2K"); 
+                        continue; 
+                    }
+
+                    let payload = RunPayload { model: model.clone(), prompt: trimmed.to_string() };
+
+                    match c.post(format!("{}/run", kernel_url)).json(&payload).send().await {
+                        Ok(response) => {
+                            if response.status().is_success() {
+
+                                let mut stream = response.bytes_stream();
+
+                                let mut is_thinking = false;
+
+                                while let Some(chunk) = stream.next().await {
+                                    if let Ok(bytes) = chunk {
+                                        let text = String::from_utf8_lossy(&bytes).to_string();
+                                        if text.starts_with("ORE KERNEL ALERT") {
+                                            print!("{}", text.red().bold());
+                                            continue;
+                                        } 
+                                        
+                                        // Check for Thinking Tags - Thinking machine handling internal monologue vs final answer rendering
+                                        if text.contains("<think>") {
+                                            is_thinking = true;
+                                            print!("{} ", "[Thinking...]".bright_black().italic());
+                                            let clean = text.replace("<think>", "");
+                                            print!("{}", clean.bright_black().italic());
+                                            io::stdout().flush().unwrap();
+                                            continue;
+                                        }
+
+                                        if text.contains("</think>") {
+                                            is_thinking = false;
+                                            let clean = text.replace("</think>", "");
+                                            print!("{}", clean.bright_black().italic());
+                                            print!("\n\n{} ", "[Answer]".blue().bold());
+                                            io::stdout().flush().unwrap();
+                                            continue;
+                                        }
+
+                                        // Render the text based on the current state
+                                        if is_thinking {
+                                            // Dim gray and italic for the internal monologue
+                                            print!("{}", text.bright_black().italic());
+                                        } else {
+                                            // Bright blue for the final answer
+                                            print!("{}", text.blue());
+                                        }
+                                        io::stdout().flush().unwrap();
+                                    }
+                                }
+                                println!("\n");
+                            } else {
+                                println!("{} Kernel Error: {}", "[-]".red(), response.status());
+                            }
+                        }
+                        Err(_) => {
+                            println!("{} ORE Kernel is offline.", "[-]".red());
+                            break;
+                        }
+                    }
+                }
             }
         }
         Commands::Load { model_name } => {

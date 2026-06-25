@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let addr = "127.0.0.1:3000";
+    let addr = "127.0.0.1:6767";
     kprintln!("=== ORE KERNEL IS ONLINE ===");
     kprintln!("Listening on http://{}", addr);
 

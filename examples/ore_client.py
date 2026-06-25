@@ -15,7 +15,7 @@ import requests
 
 # ─── Configuration ───────────────────────────────────────────────
 
-ORE_BASE_URL = os.environ.get("ORE_URL", "http://127.0.0.1:3000")
+ORE_BASE_URL = os.environ.get("ORE_URL", "http://127.0.0.1:6767")
 TOKEN_PATHS = [
     os.path.join("..", "ore-server", "ore-kernel.token"),   # from examples/
     os.path.join("ore-server", "ore-kernel.token"),         # from repo root

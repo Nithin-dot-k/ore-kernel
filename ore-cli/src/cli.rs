@@ -47,7 +47,7 @@ pub enum Commands {
         /// The name of the model to use (e.g., llama3.2, qwen2.5:0.5b)
         model: String,
         /// The prompt or task to send to the AI
-        prompt: String,
+        prompt: Option<String>,
     },
     /// Pre-load a model into GPU VRAM for zero-latency startups
     Load {

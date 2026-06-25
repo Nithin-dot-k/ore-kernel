@@ -2,7 +2,7 @@
 
 > All 15 authenticated HTTP routes exposed by the ORE kernel daemon.
 
-**Base URL:** `http://127.0.0.1:3000`
+**Base URL:** `http://127.0.0.1:6767`
 
 **Authentication:** Every request requires a `Authorization: Bearer <token>` header. The token is auto-generated on boot and written to `ore-kernel.token`. Unauthorized requests receive `401 UNAUTHORIZED`.
 
@@ -18,7 +18,7 @@ Kernel health check. Returns the active engine name.
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/health
+     http://127.0.0.1:6767/health
 ```
 
 **Response:**
@@ -34,7 +34,7 @@ List models currently loaded in GPU VRAM.
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/ps
+     http://127.0.0.1:6767/ps
 ```
 
 **Response:**
@@ -52,7 +52,7 @@ List all locally installed models on disk.
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/ls
+     http://127.0.0.1:6767/ls
 ```
 
 **Response:**
@@ -70,7 +70,7 @@ Agent security dashboard - lists all registered agents with security assessment.
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/agents
+     http://127.0.0.1:6767/agents
 ```
 
 **Response:**
@@ -90,7 +90,7 @@ Raw permission matrix for all registered manifests.
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/manifests
+     http://127.0.0.1:6767/manifests
 ```
 
 **Response:**
@@ -110,7 +110,7 @@ Download and install a model (triggers HuggingFace or Ollama pull).
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/pull/qwen2.5:0.5b
+     http://127.0.0.1:6767/pull/qwen2.5:0.5b
 ```
 
 **Response:**
@@ -126,7 +126,7 @@ Pre-load a model into VRAM for zero-latency inference.
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/load/qwen2.5:0.5b
+     http://127.0.0.1:6767/load/qwen2.5:0.5b
 ```
 
 **Response:**
@@ -142,7 +142,7 @@ Force-evict a model from GPU VRAM.
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/expel/qwen2.5:0.5b
+     http://127.0.0.1:6767/expel/qwen2.5:0.5b
 ```
 
 **Response:**
@@ -158,7 +158,7 @@ Wipe an agent's SSD swap memory (frozen context).
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/clear/my_agent
+     http://127.0.0.1:6767/clear/my_agent
 ```
 
 **Response:**
@@ -174,7 +174,7 @@ Force a background memory compaction cycle for an agent, summarising chat histor
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/compact/my_agent
+     http://127.0.0.1:6767/compact/my_agent
 ```
 
 **Response:**
@@ -195,7 +195,7 @@ Secured inference with full firewall pipeline + SSD paging. Uses `terminal_user`
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/ask/What%20is%20a%20mutex
+     http://127.0.0.1:6767/ask/What%20is%20a%20mutex
 ```
 
 **Pipeline:** Auth → Manifest lookup → Firewall (injection + PII + boundary) → Page-in history & KV-Cache → Scheduler → Inference → Page-out history & KV-Cache (with Compaction support)
@@ -211,7 +211,7 @@ curl -X POST \
      -H "Authorization: Bearer $(cat ore-kernel.token)" \
      -H "Content-Type: application/json" \
      -d '{"model": "qwen2.5:0.5b", "prompt": "Explain ownership in Rust"}' \
-     http://127.0.0.1:3000/run
+     http://127.0.0.1:6767/run
 ```
 
 **Request Body:**
@@ -245,7 +245,7 @@ curl -X POST \
        "chunk_size": 50,
        "chunk_overlap": 10
      }' \
-     http://127.0.0.1:3000/ipc/share
+     http://127.0.0.1:6767/ipc/share
 ```
 
 **Request Body:**
@@ -284,7 +284,7 @@ curl -X POST \
        "query": "How does ownership work?",
        "top_k": 3
      }' \
-     http://127.0.0.1:3000/ipc/search
+     http://127.0.0.1:6767/ipc/search
 ```
 
 **Request Body:**
@@ -335,7 +335,7 @@ curl -X POST \
        "to_app": "writer_agent",
        "payload": "Please summarize the latest Rust RFC"
      }' \
-     http://127.0.0.1:3000/ipc/send
+     http://127.0.0.1:6767/ipc/send
 ```
 
 The sender must have the target listed in `allowed_agent_targets` in its manifest.
@@ -348,7 +348,7 @@ Poll for incoming agent messages. The agent must first register as a listener.
 
 ```bash
 curl -H "Authorization: Bearer $(cat ore-kernel.token)" \
-     http://127.0.0.1:3000/ipc/listen/writer_agent
+     http://127.0.0.1:6767/ipc/listen/writer_agent
 ```
 
 **Response:** The next pending `AgentMessage` from the unbounded channel queue, or empty if none.

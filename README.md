@@ -362,7 +362,7 @@ cargo run -p ore-server
 # -> [REGISTRY] Verified & Loaded App: writer_agent
 # -> [BOOT] Engaging Native Candle Engine...
 # === ORE KERNEL IS ONLINE ===
-# Listening on http://127.0.0.1:3000
+# Listening on http://127.0.0.1:6767
 ```
 
 > [!IMPORTANT]

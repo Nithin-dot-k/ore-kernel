@@ -66,7 +66,7 @@ Expected output:
 -> [REGISTRY] Verified & Loaded App: writer_agent
 -> [BOOT] Engaging Native Candle Engine...
 === ORE KERNEL IS ONLINE ===
-Listening on http://127.0.0.1:3000
+Listening on http://127.0.0.1:6767
 ```
 
 > **⚡ Performance Tip:** Use `cargo run --release -p ore-server` for production workloads. The release profile enables `opt-level = 3`, LTO, and single codegen unit - making Native Candle inference **5–10x faster** than debug builds.
