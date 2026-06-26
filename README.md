@@ -25,6 +25,34 @@
 
 ---
 
+## Why ORE? (The Physics of Local AI)
+
+Modern local AI stacks are dangerously fragile. If you try to run multi-agent swarms (like OpenClaw, AutoGen, or CrewAI) on consumer hardware using basic Python wrappers, you hit physical hardware walls. ORE was built to bypass them.
+
+### 1. The Prefill Penalty (15.4x Latency Speedup)
+![CPU Benchmark](docs/img/CPU%20Benchmark.png)
+
+If you are running agents on a CPU, you are bottlenecked by the ALU math of the "Prefill" phase. When Agent B interrupts Agent A, standard frameworks throw away Agent A's KV-cache. When Agent A returns, the CPU has to recalculate the entire history from scratch. 
+**The Benchmark:** On a Ryzen 7 (16GB RAM), an agent swap took **37.03 seconds** of pure matrix multiplication. With ORE, we rip the physical tensors out of the engine, save them to the NVMe SSD, and map them back when needed. It took **2.41 seconds**. That is a 1,440% speedup just by respecting OS-level paging.
+
+### 2. The VRAM Wall (Infinite Concurrency)
+![GPU Leverage](docs/img/GPU%20leverage.png)
+
+If you have a 24GB GPU, speed isn't your problem. **Space is.** 
+If you spin up 10 agents, each generating a 2GB KV-cache, you hit 20GB. Add the 14GB model weights, and your GPU hits 141% capacity. It panics, throws `CUDA_OUT_OF_MEMORY`, and your script dies.
+**The Fix:** ORE acts as a Hypervisor. It forces agents to acquire a `GpuLease` (a Tokio Semaphore). Agent 1 pages into VRAM, thinks, pages out to the SSD, and releases the lock. Because a Gen4 PCIe slot can move a 1GB tensor state in **~0.15 seconds**, the context-switch is invisible to the user. ORE allows you to run a 50-Agent swarm on a single consumer GPU without ever crashing.
+
+### 3. Unix Pipes for Agents (Zero-Bloat IPC)
+![Semantic Bus](docs/img/Semantic%20Bus.png)
+
+Right now, if you want Agent A to share knowledge with Agent B, you are forced to install a vector database like ChromaDB or FAISS. That adds **2+ Gigabytes of dependency bloat** (PyTorch, ONNX, etc.) and burns System RAM just to sit idle.
+**The ORE Way:** ORE provides the **Semantic Bus**. Agent A sends raw text to a kernel pipe. ORE briefly wakes up a Safetensors embedder, does the math, and kills the model (**0MB idle RAM**). Agent B searches it instantly. Because ORE uses `Arc<Vec<f32>>` pointers in Rust, the exact same memory address is shared between agents—**Zero-Copy Memory**. No Docker, no networking overhead.
+
+### 4. Neural State Persistence
+![Neural State Persistence](docs/img/Neural%20State%20Persistence.png)
+
+By ripping the KV-Cache out of the inference engine and writing it to `.safetensors` on the NVMe SSD, you bypass the Prefill phase entirely. You can have a 10,000-token conversation, shut your computer down, boot it up a week later, and your agent will respond to the next prompt instantly without recalculating the past.
+
 ## What is ORE?
 
 **ORE (Open Runtime Environment)** is a **kernel-level process manager** for local Artificial Intelligence, written entirely in Rust.
