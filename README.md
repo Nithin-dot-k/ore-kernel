@@ -669,10 +669,10 @@ Special thanks to:
 
 ## License
 
-Released under the **MIT License** - see [`LICENSE-MIT`](./LICENSE-MIT) for full text.
+Released under the **AGPL-3.0-or-later** - see [`LICENSE`](./LICENSE) for full text.
 
 ```
-Copyright © 2026 ORE Contributors
+Copyright © 2026 Mahavishnu-K
 ```
 
 ---
