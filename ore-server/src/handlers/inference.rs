@@ -286,13 +286,17 @@ pub async fn run_process(
     State(state): State<Arc<KernelState>>,
     Json(payload): Json<RunRequest>,
 ) -> Response {
+    let app_id_owned = payload.app_id.clone(); 
+
+    let app_id = app_id_owned.as_str();
+
     crate::kprintln!(
-        "-> [EXEC] Model: {} | Prompt: {}",
+        "-> [EXEC] App ID: {} | Model: {} | Prompt: {}",
+        app_id,
         payload.model,
         payload.prompt
     );
 
-    let app_id = "terminal_user";
     let manifest = match state.registry.get_app(app_id) {
         Some(m) => m.clone(),
         None => {
@@ -349,7 +353,7 @@ pub async fn run_process(
     let scheduler_clone = Arc::clone(&state.scheduler);
     let model_name = lease.model.clone();
     let prompt = secured_gpu_prompt.clone();
-    let app_id_str = app_id.to_string();
+    let app_id_str = app_id_owned;
 
     let is_stateful = manifest.resources.stateful_paging;
     let is_json_history = manifest.resources.json_history;
@@ -426,7 +430,7 @@ pub async fn run_process(
                         text_to_summarize
                     );
 
-                    let comp_lease = scheduler_clone.request_gpu(&model_name, app_id).await;
+                    let comp_lease = scheduler_clone.request_gpu(&model_name, &app_id_str).await;
                     kprintln!("-> [COMPACTION] GPU Lease acquired for background summarization.");
 
                     let (tx_comp, mut rx_comp) = tokio::sync::mpsc::unbounded_channel::<String>();

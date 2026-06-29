@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 #[derive(serde::Deserialize)]
 pub struct RunRequest {
+    pub app_id: String,
     pub model: String,
     pub prompt: String,
 }

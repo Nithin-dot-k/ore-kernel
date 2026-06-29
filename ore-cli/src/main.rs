@@ -15,6 +15,7 @@ use utils::{
 
 #[derive(serde::Serialize)]
 struct RunPayload {
+    app_id: String,
     model: String,
     prompt: String,
 }
@@ -327,6 +328,7 @@ async fn main() {
                 );
 
                 let payload = RunPayload {
+                    app_id: "terminal_user".to_string(),
                     model: model.clone(),
                     prompt: p.clone(),
                 };
@@ -396,7 +398,7 @@ async fn main() {
                         continue; 
                     }
 
-                    let payload = RunPayload { model: model.clone(), prompt: trimmed.to_string() };
+                    let payload = RunPayload { app_id: "terminal_user".to_string(), model: model.clone(), prompt: trimmed.to_string() };
 
                     match c.post(format!("{}/run", kernel_url)).json(&payload).send().await {
                         Ok(response) => {
